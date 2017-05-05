@@ -36,7 +36,7 @@ function FUnregisterExpectedMemoryLeak(P: Pointer): Boolean; external lib name '
 procedure FScanForMemoryLeaks; external lib name 'FScanForMemoryLeaks';
 
 function FShareMemoryManager: TSharedMemory; external lib name 'FShareMemoryManager';
-//function FAttemptToUseSharedMemoryManager: TSharedMemory; external lib name 'FAttemptToUseSharedMemoryManager';
+function FAttemptToUseSharedMemoryManager: TSharedMemory; external lib name 'FAttemptToUseSharedMemoryManager';
 
 procedure FGetMemoryManagerState(out AMemoryManagerState: TMemoryManagerState); external lib name 'FGetMemoryManagerState';
 procedure FGetMemoryMap(out AMemoryMap: TMemoryMap); external lib name 'FGetMemoryMap';

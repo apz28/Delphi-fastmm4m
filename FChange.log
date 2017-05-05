@@ -1,0 +1,846 @@
+Fast Memory Manager 4.991
+
+Description:
+ A fast replacement memory manager for Embarcadero Delphi Win32 applications
+ that scales well under multi-threaded usage, is not prone to memory
+ fragmentation, and supports shared memory without the use of external .DLL
+ files.
+
+Homepage:
+ http://fastmm.sourceforge.net
+
+Advantages:
+ - Fast
+ - Low overhead. FastMM is designed for an average of 5% and maximum of 10%
+   overhead per block.
+ - Supports up to 3GB of user mode address space under Windows 32-bit and 4GB
+   under Windows 64-bit. Add the "$SetPEFlags $20" option (in curly braces)
+   to your .dpr to enable this.
+ - Highly aligned memory blocks. Can be configured for either 8-byte or 16-byte
+   alignment.
+ - Good scaling under multi-threaded applications
+ - Intelligent reallocations. Avoids slow memory move operations through
+   not performing unneccesary downsizes and by having a minimum percentage
+   block size growth factor when an in-place block upsize is not possible.
+ - Resistant to address space fragmentation
+ - No external DLL required when sharing memory between the application and
+   external libraries (provided both use this memory manager)
+ - Optionally reports memory leaks on program shutdown. (This check can be set
+   to be performed only if Delphi is currently running on the machine, so end
+   users won't be bothered by the error message.)
+ - Supports Delphi 4 (or later), C++ Builder 4 (or later), Kylix 3.
+
+Usage:
+ Delphi:
+  Place this unit, FMemoryLib.pas, as the very first unit under the "uses" section in your
+  project's .dpr file. When sharing memory between an application and a DLL
+  (e.g. when passing a long string or dynamic array to a DLL function), both the
+  main application and the DLL must be compiled using this memory manager (with
+  the required conditional defines set). There are some conditional defines
+  (inside FastMM4Options.inc) that may be used to tweak the memory manager. To
+  enable support for a user mode address space greater than 2GB you will have to
+  use the EditBin* tool to set the LARGE_ADDRESS_AWARE flag in the EXE header.
+  This informs Windows x64 or Windows 32-bit (with the /3GB option set) that the
+  application supports an address space larger than 2GB (up to 4GB). In Delphi 6
+  and later you can also specify this flag through the compiler directive
+  {$SetPEFlags $20}
+  *The EditBin tool ships with the MS Visual C compiler.
+ C++ Builder 6:
+  Refer to the instructions inside FastMM4BCB.cpp.
+
+License:
+ This work is copyright Professional Software Development / Pierre le Riche. It
+ is released under a dual license, and you may choose to use it under either the
+ Mozilla Public License 1.1 (MPL 1.1, available from
+ http://www.mozilla.org/MPL/MPL-1.1.html)
+ or the GNU Lesser General Public License 2.1 (LGPL 2.1, available from
+ http://www.opensource.org/licenses/lgpl-license.php).
+ 
+ If you find FastMM useful or you would like to support further development,
+ a donation would be much
+ 
+ appreciated. My banking details are:
+   Country: South Africa
+   Bank: ABSA Bank Ltd
+   Branch: Somerset West
+   Branch Code: 334-712
+   Account Name: PSD (Distribution)
+   Account No.: 4041827693
+   Swift Code: ABSAZAJJ
+   
+ My PayPal account is:
+   bof@psd.co.za
+
+Contact Details:
+ My contact details are shown below if you would like to get in touch with me.
+ If you use this memory manager I would like to hear from you: please e-mail me
+ your comments - good and bad.
+ 
+ Snailmail:
+   PO Box 2514
+   Somerset West
+   7129
+   South Africa
+   
+ E-mail:
+   plr@psd.co.za
+
+Support:
+ If you have trouble using FastMM, you are welcome to drop me an e-mail at the
+ address above, or you may post your questions in the BASM newsgroup on the
+ Embarcadero news server (which is where I hang out quite frequently).
+
+Disclaimer:
+ FastMM has been tested extensively with both single and multithreaded
+ applications on various hardware platforms, but unfortunately I am not in a
+ position to make any guarantees. Use it at your own risk.
+
+Acknowledgements (for version 4):
+ - Eric Grange for his RecyclerMM on which the earlier versions of FastMM were
+   based. RecyclerMM was what inspired me to try and write my own memory
+   manager back in early 2004.
+ - Primoz Gabrijelcic for helping to track down various bugs.
+ - Dennis Christensen for his tireless efforts with the Fastcode project:
+   helping to develop, optimize and debug the growing Fastcode library.
+ - JiYuan Xie for implementing the leak reporting code for C++ Builder.
+ - Sebastian Zierer for implementing the OS X support.
+ - Pierre Y. for his suggestions regarding the extension of the memory leak
+   checking options.
+ - Hanspeter Widmer for his suggestion to have an option to display install and
+   uninstall debug messages and moving options to a separate file, as well as
+   the new usage tracker.
+ - Anders Isaksson and Greg for finding and identifying the "DelphiIsRunning"
+   bug under Delphi 5.
+ - Francois Malan for various suggestions and bug reports.
+ - Craig Peterson for helping me identify the cache associativity issues that
+   could arise due to medium blocks always being an exact multiple of 256 bytes.
+   Also for various other bug reports and enhancement suggestions.
+ - Jarek Karciarz, Vladimir Ulchenko (Vavan) and Bob Gonder for their help in
+   implementing the BCB support.
+ - Ben Taylor for his suggestion to display the object class of all memory
+   leaks.
+ - Jean Marc Eber and Vincent Mahon (the Memcheck guys) for the call stack
+   trace code and also the method used to catch virtual method calls on freed
+   objects.
+ - Nahan Hyn for the suggestion to be able to enable or disable memory leak
+   reporting through a global variable (the "ManualLeakReportingControl"
+   option.)
+ - Leonel Togniolli for various suggestions with regard to enhancing the bug
+   tracking features of FastMM and other helpful advice.
+ - Joe Bain and Leonel Togniolli for the workaround to QC#10922 affecting
+   compilation under Delphi 2005.
+ - Robert Marquardt for the suggestion to make localisation of FastMM easier by
+   having all string constants together.
+ - Simon Kissel and Fikret Hasovic for their help in implementing Kylix support.
+ - Matthias Thoma, Petr Vones, Robert Rossmair and the rest of the JCL team for
+   their debug info library used in the debug info support DLL and also the
+   code used to check for a valid call site in the "raw" stack trace code.
+ - Andreas Hausladen for the suggestion to use an external DLL to enable the
+   reporting of debug information.
+ - Alexander Tabakov for various good suggestions regarding the debugging
+   facilities of FastMM.
+ - M. Skloff for some useful suggestions and bringing to my attention some
+   compiler warnings.
+ - Martin Aignesberger for the code to use madExcept instead of the JCL library
+   inside the debug info support DLL.
+ - Diederik and Dennis Passmore for the suggestion to be able to register
+   expected leaks.
+ - Dario Tiraboschi and Mark Gebauer for pointing out the problems that occur
+   when range checking and complete boolean evaluation is turned on.
+ - Arthur Hoornweg for notifying me of the image base being incorrect for
+   borlndmm.dll.
+ - Theo Carr-Brion and Hanspeter Widmer for finding the false alarm error
+   message "Block Header Has Been Corrupted" bug in FullDebugMode.
+ - Danny Heijl for reporting the compiler error in "release" mode.
+ - Omar Zelaya for reporting the BCB support regression bug.
+ - Dan Miser for various good suggestions, e.g. not logging expected leaks to
+   file, enhancements the stack trace and messagebox functionality, etc.
+ - Arjen de Ruijter for fixing the bug in GetMemoryLeakType that caused it
+   to not properly detect expected leaks registered by class when in
+   "FullDebugMode".
+ - Aleksander Oven for reporting the installation problem when trying to use
+   FastMM in an application together with libraries that all use runtime
+   packages.
+ - Kristofer Skaug for reporting the bug that sometimes causes the leak report
+   to be shown, even when all the leaks have been registered as expected leaks.
+   Also for some useful enhancement suggestions.
+ - Günther Schoch for the "RequireDebuggerPresenceForLeakReporting" option.
+ - Jan Schlüter for the "ForceMMX" option.
+ - Hallvard Vassbotn for various good enhancement suggestions.
+ - Mark Edington for some good suggestions and bug reports.
+ - Paul Ishenin for reporting the compilation error when the NoMessageBoxes
+   option is set and also the missing call stack entries issue when "raw" stack
+   traces are enabled, as well as for the Russian translation.
+ - Cristian Nicola for reporting the compilation bug when the
+   CatchUseOfFreedInterfaces option was enabled (4.40).
+ - Mathias Rauen (madshi) for improving the support for madExcept in the debug
+   info support DLL.
+ - Roddy Pratt for the BCB5 support code.
+ - Rene Mihula for the Czech translation and the suggestion to have dynamic
+   loading of the FullDebugMode DLL as an option.
+ - Artur Redzko for the Polish translation.
+ - Bart van der Werf for helping me solve the DLL unload order problem when
+   using the debug mode borlndmm.dll library, as well as various other
+   suggestions.
+ - JRG ("The Delphi Guy") for the Spanish translation.
+ - Justus Janssen for Delphi 4 support.
+ - Vadim Lopushansky and Charles Vinal for reporting the Delphi 5 compiler
+   error in version 4.50.
+ - Johni Jeferson Capeletto for the Brazilian Portuguese translation.
+ - Kurt Fitzner for reporting the BCB6 compiler error in 4.52.
+ - Michal Niklas for reporting the Kylix compiler error in 4.54.
+ - Thomas Speck and Uwe Queisser for German translations.
+ - Zaenal Mutaqin for the Indonesian translation.
+ - Carlos Macao for the Portuguese translation.
+ - Michael Winter for catching the performance issue when reallocating certain
+   block sizes.
+ - dzmitry[li] for the Belarussian translation.
+ - Marcelo Montenegro for the updated Spanish translation.
+ - Jud Cole for finding and reporting the bug which may trigger a read access
+   violation when upsizing certain small block sizes together with the
+   "UseCustomVariableSizeMoveRoutines" option.
+ - Zdenek Vasku for reporting and fixing the memory manager sharing bug
+   affecting Windows 95/98/Me.
+ - RB Winston for suggesting the improvement to GExperts "backup" support.
+ - Thomas Schulz for reporting the bug affecting large address space support
+   under FullDebugMode, as well as the recursive call bug when attempting to
+   report memory leaks when EnableMemoryLeakReporting is disabled.
+ - Luigi Sandon for the Italian translation.
+ - Werner Bochtler for various suggestions and bug reports.
+ - Markus Beth for suggesting the "NeverSleepOnThreadContention" option.
+ - JiYuan Xie for the Simplified Chinese translation.
+ - Andrey Shtukaturov for the updated Russian translation, as well as the
+   Ukrainian translation.
+ - Dimitry Timokhov for finding two elusive bugs in the memory leak class
+   detection code.
+ - Paulo Moreno for fixing the AllocMem bug in FullDebugMode that prevented
+   large blocks from being cleared.
+ - Vladimir Bochkarev for the suggestion to remove some unnecessary code if the
+   MM sharing mechanism is disabled.
+ - Loris Luise for the version constant suggestion.
+ - J.W. de Bokx for the MessageBox bugfix.
+ - Igor Lindunen for reporting the bug that caused the Align16Bytes option to
+   not work in FullDebugMode.
+ - Ionut Muntean for the Romanian translation.
+ - Florent Ouchet for the French translation.
+ - Marcus Mönnig for the ScanMemoryPoolForCorruptions suggestion and the
+   suggestion to have the option to scan the memory pool before every
+   operation when in FullDebugMode.
+ - Francois Piette for bringing under my attention that
+   ScanMemoryPoolForCorruption was not thread safe.
+ - Michael Rabatscher for reporting some compiler warnings.
+ - QianYuan Wang for the Simplified Chinese translation of FastMM4Options.inc.
+ - Maurizio Lotauro and Christian-W. Budde for reporting some Delphi 5
+   compiler errors.
+ - Patrick van Logchem for the DisableLoggingOfMemoryDumps option.
+ - Norbert Spiegel for the BCB4 support code.
+ - Uwe Schuster for the improved string leak detection code.
+ - Murray McGowan for improvements to the usage tracker.
+ - Michael Hieke for the SuppressFreeMemErrorsInsideException option as well
+   as a bugfix to GetMemoryMap.
+ - Richard Bradbrook for fixing the Windows 95 FullDebugMode support that was
+   broken in version 4.94.
+ - Zach Saw for the suggestion to (optionally) use SwitchToThread when
+   waiting for a lock on a shared resource to be released.
+ - Everyone who have made donations. Thanks!
+ - Any other Fastcoders or supporters that I have forgotten, and also everyone
+   that helped with the older versions.
+
+Change log:
+ Version 1.00 (28 June 2004):
+  - First version (called PSDMemoryManager). Based on RecyclerMM (free block
+    stack approach) by Eric Grange.
+ Version 2.00 (3 November 2004):
+  - Complete redesign and rewrite from scratch. Name changed to FastMM to
+    reflect this fact. Uses a linked-list approach. Is faster, has less memory
+    overhead, and will now catch most bad pointers on FreeMem calls.
+ Version 3.00 (1 March 2005):
+  - Another rewrite. Reduced the memory overhead by: (a) not having a separate
+    memory area for the linked list of free blocks (uses space inside free
+    blocks themselves) (b) batch managers are allocated as part of chunks (c)
+    block size lookup table size reduced. This should make FastMM more CPU
+    cache friendly.
+ Version 4.00 (7 June 2005):
+  - Yet another rewrite. FastMM4 is in fact three memory managers in one: Small
+    blocks (up to a few KB) are managed through the binning model in the same
+    way as previous versions, medium blocks (from a few KB up to approximately
+    256K) are allocated in a linked-list fashion, and large blocks are grabbed
+    directly from the system through VirtualAlloc. This 3-layered design allows
+    very fast operation with the most frequently used block sizes (small
+    blocks), while also minimizing fragmentation and imparting significant
+    overhead savings with blocks larger than a few KB.
+ Version 4.01 (8 June 2005):
+  - Added the options "RequireDebugInfoForLeakReporting" and
+    "RequireIDEPresenceForLeakReporting" as suggested by Pierre Y.
+  - Fixed the "DelphiIsRunning" function not working under Delphi 5, and
+    consequently no leak checking. (Reported by Anders Isaksson and Greg.)
+ Version 4.02 (8 June 2005):
+  - Fixed the compilation error when both the "AssumeMultiThreaded" and
+    "CheckHeapForCorruption options were set. (Reported by Francois Malan.)
+ Version 4.03 (9 June 2005):
+  - Added descriptive error messages when FastMM4 cannot be installed because
+    another MM has already been installed or memory has already been allocated.
+ Version 4.04 (13 June 2005):
+  - Added a small fixed offset to the size of medium blocks (previously always
+    exact multiples of 256 bytes). This makes performance problems due to CPU
+    cache associativity limitations much less likely. (Reported by Craig
+    Peterson.)
+ Version 4.05 (17 June 2005):
+  - Added the Align16Bytes option. Disable this option to drop the 16 byte
+    alignment restriction and reduce alignment to 8 bytes for the smallest
+    block sizes. Disabling Align16Bytes should lower memory consumption at the
+    cost of complicating the use of aligned SSE move instructions. (Suggested
+    by Craig Peterson.)
+  - Added a support unit for C++ Builder 6 - Add FastMM4BCB.cpp and
+    FastMM4.pas to your BCB project to use FastMM instead of the RTL MM. Memory
+    leak checking is not supported because (unfortunately) once an MM is
+    installed under BCB you cannot uninstall it... at least not without
+    modifying the RTL code in exit.c or patching the RTL code runtime. (Thanks
+    to Jarek Karciarz, Vladimir Ulchenko and Bob Gonder.)
+ Version 4.06 (22 June 2005):
+  - Displays the class of all leaked objects on the memory leak report and also
+    tries to identify leaked long strings. Previously it only displayed the
+    sizes of all leaked blocks. (Suggested by Ben Taylor.)
+  - Added support for displaying the sizes of medium and large block memory
+    leaks. Previously it only displayed details for small block leaks.
+ Version 4.07 (22 June 2005):
+  - Fixed the detection of the class of leaked objects not working under
+    Windows 98/Me.
+ Version 4.08 (27 June 2005):
+  - Added a BorlndMM.dpr project to allow you to build a borlndmm.dll that uses
+    FastMM4 instead of the default memory manager. You may replace the old
+    DLL in the Delphi \Bin directory to make the IDE use this memory manager
+    instead.
+ Version 4.09 (30 June 2005):
+  - Included a patch fix for the bug affecting replacement borlndmm.dll files
+    with Delphi 2005 (QC#14007). Compile the patch, close Delphi, and run it
+    once to patch your vclide90.bpl. You will now be able to use the
+    replacement borlndmm.dll to speed up the Delphi 2005 IDE as well.
+ Version 4.10 (7 July 2005):
+  - Due to QC#14070 ("Delphi IDE attempts to free memory after the shutdown
+    code of borlndmm.dll has been called"), FastMM cannot be uninstalled
+    safely when used inside a replacement borlndmm.dll for the IDE. Added a
+    conditional define "NeverUninstall" for this purpose.
+  - Added the "FullDebugMode" option to pad all blocks with a header and footer
+    to help you catch memory overwrite bugs in your applications. All blocks
+    returned to freemem are also zeroed out to help catch bugs involving the
+    use of previously freed blocks. Also catches attempts at calling virtual
+    methods of freed objects provided the block in question has not been reused
+    since the object was freed. Displays stack traces on error to aid debugging.
+  - Added the "LogErrorsToFile" option to log all errors to a text file in the
+    same folder as the application.
+  - Added the "ManualLeakReportingControl" option (suggested by Nahan Hyn) to
+    enable control over whether the memory leak report should be done or not
+    via a global variable.
+ Version 4.11 (7 July 2005):
+  - Fixed a compilation error under Delphi 2005 due to QC#10922. (Thanks to Joe
+    Bain and Leonel Togniolli.)
+  - Fixed leaked object classes not displaying in the leak report in
+    "FullDebugMode".
+  Version 4.12 (8 July 2005):
+  - Moved all the string constants to one place to make it easier to do
+    translations into other languages. (Thanks to Robert Marquardt.)
+  - Added support for Kylix. Some functionality is currently missing: No
+    support for detecting the object class on leaks and also no MM sharing.
+    (Thanks to Simon Kissel and Fikret Hasovic).
+  Version 4.13 (11 July 2005):
+  - Added the FastMM_DebugInfo.dll support library to display debug info for
+    stack traces.
+  - Stack traces for the memory leak report is now logged to the log file in
+    "FullDebugMode".
+  Version 4.14 (14 July 2005):
+  - Fixed string leaks not being detected as such in "FullDebugMode". (Thanks
+    to Leonel Togniolli.)
+  - Fixed the compilation error in "FullDebugMode" when "LogErrorsToFile" is
+    not set. (Thanks to Leonel Togniolli.)
+  - Added a "Release" option to allow the grouping of various options and to
+    make it easier to make debug and release builds. (Thanks to Alexander
+    Tabakov.)
+  - Added a "HideMemoryLeakHintMessage" option to not display the hint below
+    the memory leak message. (Thanks to Alexander Tabakov.)
+  - Changed the fill character for "FullDebugMode" from zero to $80 to be able
+    to differentiate between invalid memory accesses using nil pointers to
+    invalid memory accesses using fields of freed objects. FastMM tries to
+    reserve the 64K block starting at $80800000 at startup to ensure that an
+    A/V will occur when this block is accessed. (Thanks to Alexander Tabakov.)
+  - Fixed some compiler warnings. (Thanks to M. Skloff)
+  - Fixed some display bugs in the memory leak report. (Thanks to Leonel
+    Togniolli.)
+  - Added a "LogMemoryLeakDetailToFile" option. Some applications leak a lot of
+    memory and can make the log file grow very large very quickly.
+  - Added the option to use madExcept instead of the JCL Debug library in the
+    debug info support DLL. (Thanks to Martin Aignesberger.)
+  - Added procedures "GetMemoryManagerState" and "GetMemoryMap" to retrieve
+    statistics about the current state of the memory manager and memory pool.
+    (A usage tracker form together with a demo is also available.)
+  Version 4.15 (14 July 2005):
+  - Fixed a false 4GB(!) memory leak reported in some instances.
+  Version 4.16 (15 July 2005):
+  - Added the "CatchUseOfFreedInterfaces" option to catch the use of interfaces
+    of freed objects. This option is not compatible with checking that a freed
+    block has not been modified, so enable this option only when hunting an
+    invalid interface reference. (Only relevant if "FullDebugMode" is set.)
+  - During shutdown FastMM now checks that all free blocks have not been
+    modified since being freed. (Only when "FullDebugMode" is set and
+    "CatchUseOfFreedInterfaces" is disabled.)
+  Version 4.17 (15 July 2005):
+ - Added the AddExpectedMemoryLeaks and RemoveExpectedMemoryLeaks procedures to
+   register/unregister expected leaks, thus preventing the leak report from
+   displaying if only expected leaks occurred. (Thanks to Diederik and Dennis
+   Passmore for the suggestion.) (Note: these functions were renamed in later
+   versions.)
+ - Fixed the "LogMemoryLeakDetailToFile" not logging memory leak detail to file
+   as it is supposed to. (Thanks to Leonel Togniolli.)
+ Version 4.18 (18 July 2005):
+ - Fixed some issues when range checking or complete boolean evaluation is
+   switched on. (Thanks to Dario Tiraboschi and Mark Gebauer.)
+ - Added the "OutputInstallUninstallDebugString" option to display a message when
+   FastMM is installed or uninstalled. (Thanks to Hanspeter Widmer.)
+ - Moved the options to a separate include file. (Thanks to Hanspeter Widmer.)
+ - Moved message strings to a separate file for easy translation.
+ Version 4.19 (19 July 2005):
+ - Fixed Kylix support that was broken in 4.14.
+ Version 4.20 (20 July 2005):
+ - Fixed a false memory overwrite report at shutdown in "FullDebugMode". If you
+   consistently got a "Block Header Has Been Corrupted" error message during
+   shutdown at address $xxxx0070 then it was probably a false alarm. (Thanks to
+   Theo Carr-Brion and Hanspeter Widmer.}
+ Version 4.21 (27 July 2005):
+ - Minor change to the block header flags to make it possible to immediately
+   tell whether a medium block is being used as a small block pool or not.
+   (Simplifies the leak checking and status reporting code.)
+ - Expanded the functionality around the management of expected memory leaks.
+ - Added the "ClearLogFileOnStartup" option. Deletes the log file during
+   initialization. (Thanks to M. Skloff.)
+ - Changed "OutputInstallUninstallDebugString" to use OutputDebugString instead
+   of MessageBox. (Thanks to Hanspeter Widmer.)
+ Version 4.22 (1 August 2005):
+ - Added a FastAllocMem function that avoids an unnecessary FillChar call with
+   large blocks.
+ - Changed large block resizing behavior to be a bit more conservative. Large
+   blocks will be downsized if the new size is less than half of the old size
+   (the threshold was a quarter previously).
+ Version 4.23 (6 August 2005):
+ - Fixed BCB6 support (Thanks to Omar Zelaya).
+ - Renamed "OutputInstallUninstallDebugString" to "UseOutputDebugString", and
+   added debug string output on memory leak or error detection.
+ Version 4.24 (11 August 2005):
+ - Added the "NoMessageBoxes" option to suppress the display of message boxes,
+   which is useful for services that should not be interrupted. (Thanks to Dan
+   Miser).
+ - Changed the stack trace code to return the line number of the caller and not
+   the line number of the return address. (Thanks to Dan Miser).
+ Version 4.25 (15 August 2005):
+ - Fixed GetMemoryLeakType not detecting expected leaks registered by class
+   when in "FullDebugMode". (Thanks to Arjen de Ruijter).
+ Version 4.26 (18 August 2005):
+ - Added a "UseRuntimePackages" option that allows FastMM to be used in a main
+   application together with DLLs that all use runtime packages. (Thanks to
+   Aleksander Oven.)
+ Version 4.27 (24 August 2005):
+ - Fixed a bug that sometimes caused the leak report to be shown even though all
+   leaks were registered as expected leaks. (Thanks to Kristofer Skaug.)
+ Version 4.29 (30 September 2005):
+ - Added the "RequireDebuggerPresenceForLeakReporting" option to only display
+   the leak report if the application is run inside the IDE. (Thanks to Günther
+   Schoch.)
+ - Added the "ForceMMX" option, which when disabled will check the CPU for
+   MMX compatibility before using MMX. (Thanks to Jan Schlüter.)
+ - Added the module name to the title of error dialogs to more easily identify
+   which application caused the error. (Thanks to Kristofer Skaug.)
+ - Added an ASCII dump to the "FullDebugMode" memory dumps. (Thanks to Hallvard
+   Vassbotn.)
+ - Added the option "HideExpectedLeaksRegisteredByPointer" to suppress the
+   display and logging of expected memory leaks that were registered by pointer.
+   (Thanks to Dan Miser.) Leaks registered by size or class are often ambiguous,
+   so these expected leaks are always logged to file (in FullDebugMode) and are
+   never hidden from the leak display (only displayed if there is at least one
+   unexpected leak).
+ - Added a procedure "GetRegisteredMemoryLeaks" to return a list of all
+   registered memory leaks. (Thanks to Dan Miser.)
+ - Added the "RawStackTraces" option to perform "raw" stack traces, negating
+   the need for stack frames. This will usually result in more complete stack
+   traces in FullDebugMode error reports, but it is significantly slower.
+   (Thanks to Hallvard Vassbotn, Dan Miser and the JCL team.)
+ Version 4.31 (2 October 2005):
+ - Fixed the crash bug when both "RawStackTraces" and "FullDebugMode" were
+   enabled. (Thanks to Dan Miser and Mark Edington.)
+ Version 4.33 (6 October 2005):
+ - Added a header corruption check to all memory blocks that are identified as
+   leaks in FullDebugMode. This allows better differentiation between memory
+   pool corruption bugs and actual memory leaks.
+ - Fixed the stack overflow bug when using "RawStackTraces".
+ Version 4.35 (6 October 2005):
+ - Fixed a compilation error when the "NoMessageBoxes" option is set. (Thanks
+   to Paul Ishenin.)
+ - Before performing a "raw" stack trace, FastMM now checks whether exception
+   handling is in place. If exception handling is not in place FastMM falls
+   back to stack frame tracing. (Exception handling is required to handle the
+   possible A/Vs when reading invalid call addresses. Exception handling is
+   usually always available except when SysUtils hasn't been initialized yet or
+   after SysUtils has been finalized.)
+ Version 4.37 (8 October 2005):
+ - Fixed the missing call stack trace entry issue when dynamically loading DLLs.
+   (Thanks to Paul Ishenin.)
+ Version 4.39 (12 October 2005):
+ - Restored the performance with "RawStackTraces" enabled back to the level it
+   was in 4.35.
+ - Fixed the stack overflow error when using "RawStackTraces" that I thought I
+   had fixed in 4.31, but unfortunately didn't. (Thanks to Craig Peterson.)
+ Version 4.40 (13 October 2005):
+ - Improved "RawStackTraces" to have less incorrect extra entries. (Thanks to
+   Craig Peterson.)
+ - Added the Russian (by Paul Ishenin) and Afrikaans translations of
+   FastMM4Messages.pas.
+ Version 4.42 (13 October 2005):
+ - Fixed the compilation error when "CatchUseOfFreedInterfaces" is enabled.
+   (Thanks to Cristian Nicola.)
+ Version 4.44 (25 October 2005):
+ - Implemented a FastGetHeapStatus function in analogy with GetHeapStatus.
+   (Suggested by Cristian Nicola.)
+ - Shifted more of the stack trace code over to the support dll to allow third
+   party vendors to make available their own stack tracing and stack trace
+   logging facilities.
+ - Mathias Rauen (madshi) improved the support for madExcept in the debug info
+   support DLL. Thanks!
+ - Added support for BCB5. (Thanks to Roddy Pratt.)
+ - Added the Czech translation by Rene Mihula.
+ - Added the "DetectMMOperationsAfterUninstall" option. This will catch
+   attempts to use the MM after FastMM has been uninstalled, and is useful for
+   debugging.
+ Version 4.46 (26 October 2005):
+ - Renamed FastMM_DebugInfo.dll to FastMM_FullDebugMode.dll and made the
+   dependency on this library a static one. This solves a DLL unload order
+   problem when using FullDebugMode together with the replacement
+   borlndmm.dll. (Thanks to Bart van der Werf.)
+ - Added the Polish translation by Artur Redzko.
+ Version 4.48 (10 November 2005):
+ - Fixed class detection for objects leaked in dynamically loaded DLLs that
+   were relocated.
+ - Fabio Dell'Aria implemented support for EurekaLog in the FullDebugMode
+   support DLL. Thanks!
+ - Added the Spanish translation by JRG ("The Delphi Guy").
+ Version 4.49 (10 November 2005):
+ - Implemented support for installing replacement AllocMem and leak
+   registration mechanisms for Delphi/BCB versions that support it.
+ - Added support for Delphi 4. (Thanks to Justus Janssen.)
+ Version 4.50 (5 December 2005):
+ - Renamed the ReportMemoryLeaks global variable to ReportMemoryLeaksOnShutdown
+   to be more consistent with the Delphi 2006 memory manager.
+ - Improved the handling of large blocks. Large blocks can now consist of
+   several consecutive segments allocated through VirtualAlloc. This
+   significantly improves speed when frequently resizing large blocks, since
+   these blocks can now often be upsized in-place.
+ Version 4.52 (7 December 2005):
+ - Fixed the compilation error with Delphi 5. (Thanks to Vadim Lopushansky and
+   Charles Vinal for reporting the error.)
+ Version 4.54 (15 December 2005):
+ - Added the Brazilian Portuguese translation by Johni Jeferson Capeletto.
+ - Fixed the compilation error with BCB6. (Thanks to Kurt Fitzner.)
+ Version 4.56 (20 December 2005):
+ - Fixed the Kylix compilation problem. (Thanks to Michal Niklas.)
+ Version 4.58 (1 February 2006):
+ - Added the German translations by Thomas Speck and Uwe Queisser.
+ - Added the Indonesian translation by Zaenal Mutaqin.
+ - Added the Portuguese translation by Carlos Macao.
+ Version 4.60 (21 February 2006):
+ - Fixed a performance issue due to an unnecessary block move operation when
+   allocating a block in the range 1261-1372 bytes and then reallocating it in
+   the range 1373-1429 bytes twice. (Thanks to Michael Winter.)
+ - Added the Belarussian translation by dzmitry[li].
+ - Added the updated Spanish translation by Marcelo Montenegro.
+ - Added a new option "EnableSharingWithDefaultMM". This option allows FastMM
+   to be shared with the default MM of Delphi 2006. It is on by default, but
+   MM sharing has to be enabled otherwise it has no effect (refer to the
+   documentation for the "ShareMM" and "AttemptToUseSharedMM" options).
+ Version 4.62 (22 February 2006):
+ - Fixed a possible read access violation in the MoveX16LP routine when the
+   UseCustomVariableSizeMoveRoutines option is enabled. (Thanks to Jud Cole for
+   some great detective work in finding this bug.)
+ - Improved the downsizing behaviour of medium blocks to better correlate with
+   the reallocation behaviour of small blocks. This change reduces the number
+   of transitions between small and medium block types when reallocating blocks
+   in the 0.7K to 2.6K range. It cuts down on the number of memory move
+   operations and improves performance.
+ Version 4.64 (31 March 2006):
+ - Added the following functions for use with FullDebugMode (and added the
+   exports to the replacement BorlndMM.dll): SetMMLogFileName,
+   GetCurrentAllocationGroup, PushAllocationGroup, PopAllocationGroup and
+   LogAllocatedBlocksToFile. The purpose of these functions are to allow you to
+   identify and log related memory leaks while your application is still
+   running.
+ - Fixed a bug in the memory manager sharing mechanism affecting Windows
+   95/98/ME. (Thanks to Zdenek Vasku.)
+ Version 4.66 (9 May 2006):
+ - Added a hint comment in this file so that FastMM4Messages.pas will also be
+   backed up by GExperts. (Thanks to RB Winston.)
+ - Fixed a bug affecting large address space (> 2GB) support under
+   FullDebugMode. (Thanks to Thomas Schulz.)
+ Version 4.68 (3 July 2006):
+ - Added the Italian translation by Luigi Sandon.
+ - If FastMM is used inside a DLL it will now use the name of the DLL as base
+   for the log file name. (Previously it always used the name of the main
+   application executable file.)
+ - Fixed a rare A/V when both the FullDebugMode and RawStackTraces options were
+   enabled. (Thanks to Primoz Gabrijelcic.)
+ - Added the "NeverSleepOnThreadContention" option. This option may improve
+   performance if the ratio of the the number of active threads to the number
+   of CPU cores is low (typically < 2). This option is only useful for 4+ CPU
+   systems, it almost always hurts performance on single and dual CPU systems.
+   (Thanks to Werner Bochtler and Markus Beth.)
+ Version 4.70 (4 August 2006):
+  - Added the Simplified Chinese translation by JiYuan Xie.
+  - Added the updated Russian as well as the Ukrainian translation by Andrey
+    Shtukaturov.
+  - Fixed two bugs in the leak class detection code that would sometimes fail
+    to detect the class of leaked objects and strings, and report them as
+    'unknown'. (Thanks to Dimitry Timokhov)
+  Version 4.72 (24 September 2006):
+  - Fixed a bug that caused AllocMem to not clear blocks > 256K in
+    FullDebugMode. (Thanks to Paulo Moreno.)
+  Version 4.74 (9 November 2006):
+  - Fixed a bug in the segmented large block functionality that could lead to
+    an application freeze when upsizing blocks greater than 256K in a
+    multithreaded application (one of those "what the heck was I thinking?"
+    type bugs).
+  Version 4.76 (12 January 2007):
+  - Changed the RawStackTraces code in the FullDebugMode DLL
+    to prevent it from modifying the Windows "GetLastError" error code.
+    (Thanks to Primoz Gabrijelcic.)
+  - Fixed a threading issue when the "CheckHeapForCorruption" option was
+    enabled, but the "FullDebugMode" option was disabled. (Thanks to Primoz
+    Gabrijelcic.)
+  - Removed some unnecessary startup code when the MM sharing mechanism is
+    disabled. (Thanks to Vladimir Bochkarev.)
+  - In FullDebugMode leaked blocks would sometimes be reported as belonging to
+    the class "TFreedObject" if they were allocated but never used. Such blocks
+    will now be reported as "unknown". (Thanks to Francois Malan.)
+  - In recent versions the replacement borlndmm.dll created a log file (when
+    enabled) that used the "borlndmm" prefix instead of the application name.
+    It is now fixed to use the application name, however if FastMM is used
+    inside other DLLs the name of those DLLs will be used. (Thanks to Bart van
+    der Werf.)
+  - Added a "FastMMVersion" constant. (Suggested by Loris Luise.)
+  - Fixed an issue with error message boxes not displaying under certain
+    configurations. (Thanks to J.W. de Bokx.)
+  - FastMM will now display only one error message at a time. If many errors
+    occur in quick succession, only the first error will be shown (but all will
+    be logged). This avoids a stack overflow with badly misbehaved programs.
+    (Thanks to Bart van der Werf.)
+  - Added a LoadDebugDLLDynamically option to be used in conjunction with
+    FullDebugMode. In this mode FastMM_FullDebugMode.dll is loaded dynamically.
+    If the DLL cannot be found, stack traces will not be available. (Thanks to
+    Rene Mihula.)
+  Version 4.78 (1 March 2007):
+  - The MB_DEFAULT_DESKTOP_ONLY constant that is used when displaying messages
+    boxes since 4.76 is not defined under Kylix, and the source would thus not
+    compile. That constant is now defined. (Thanks to Werner Bochtler.)
+  - Moved the medium block locking code that was duplicated in several places
+    to a subroutine to reduce code size. (Thanks to Hallvard Vassbotn.)
+  - Fixed a bug in the leak registration code that sometimes caused registered
+    leaks to be reported erroneously. (Thanks to Primoz Gabrijelcic.)
+  - Added the NoDebugInfo option (on by default) that suppresses the generation
+    of debug info for the FastMM4.pas unit. This will prevent the integrated
+    debugger from stepping into the memory manager. (Thanks to Primoz
+    Gabrijelcic.)
+  - Increased the default stack trace depth in FullDebugMode from 9 to 10 to
+    ensure that the Align16Bytes setting works in FullDebugMode. (Thanks to
+    Igor Lindunen.)
+  - Updated the Czech translation. (Thanks to Rene Mihula.)
+  Version 4.84 (7 July 2008):
+  - Added the Romanian translation. (Thanks to Ionut Muntean.)
+  - Optimized the GetMemoryMap procedure to improve speed.
+  - Added the GetMemoryManagerUsageSummary function that returns a summary of
+    the GetMemoryManagerState call. (Thanks to Hallvard Vassbotn.)
+  - Added the French translation. (Thanks to Florent Ouchet.)
+  - Added the "AlwaysAllocateTopDown" FullDebugMode option to help with
+    catching bad pointer arithmetic code in an address space > 2GB. This option
+    is enabled by default.
+  - Added the "InstallOnlyIfRunningInIDE" option. Enable this option to
+    only install FastMM as the memory manager when the application is run
+    inside the Delphi IDE. This is useful when you want to deploy the same EXE
+    that you use for testing, but only want the debugging features active on
+    development machines. When this option is enabled and the application is
+    not being run inside the IDE, then the default Delphi memory manager will
+    be used (which, since Delphi 2006, is FastMM without FullDebugMode.) This
+    option is off by default.
+  - Added the "FullDebugModeInIDE" option. This is a convenient shorthand for
+    enabling FullDebugMode, InstallOnlyIfRunningInIDE and
+    LoadDebugDLLDynamically. This causes FastMM to be used in FullDebugMode
+    when the application is being debugged on development machines, and the
+    default memory manager when the same executable is deployed. This allows
+    the debugging and deployment of an application without having to compile
+    separate executables. This option is off by default.
+  - Added a ScanMemoryPoolForCorruptions procedure that checks the entire
+    memory pool for corruptions and raises an exception if one is found. It can
+    be called at any time, but is only available in FullDebugMode. (Thanks to
+    Marcus Mönnig.)
+  - Added a global variable "FullDebugModeScanMemoryPoolBeforeEveryOperation".
+    When this variable is set to true and FullDebugMode is enabled, then the
+    entire memory pool is checked for consistency before every GetMem, FreeMem
+    and ReallocMem operation. An "Out of Memory" error is raised if a
+    corruption is found (and this variable is set to false to prevent recursive
+    errors). This obviously incurs a massive performance hit, so enable it only
+    when hunting for elusive memory corruption bugs. (Thanks to Marcus Mönnig.)
+  - Fixed a bug in AllocMem that caused the FPU stack to be shifted by one
+    position.
+  - Changed the default for option "EnableMMX" to false, since using MMX may
+    cause unexpected behaviour in code that passes parameters on the FPU stack
+    (like some "compiler magic" routines, e.g. VarFromReal).
+  - Removed the "EnableSharingWithDefaultMM" option. This is now the default
+    behaviour and cannot be disabled. (FastMM will always try to share memory
+    managers between itself and the default memory manager when memory manager
+    sharing is enabled.)
+  - Introduced a new memory manager sharing mechanism based on memory mapped
+    files. This solves compatibility issues with console and service
+    applications. This sharing mechanism currently runs in parallel with the
+    old mechanism, but the old mechanism can be disabled by undefining
+    "EnableBackwardCompatibleMMSharing" in FastMM4Options.inc.
+  - Fixed the recursive call error when the EnableMemoryLeakReporting option
+    is disabled and an attempt is made to register a memory leak under Delphi
+    2006 or later. (Thanks to Thomas Schulz.)
+  - Added a global variable "SuppressMessageBoxes" to enable or disable
+    messageboxes at runtime. (Thanks to Craig Peterson.)
+  - Added the leak reporting code for C++ Builder, as well as various other
+    C++ Builder bits written by JiYuan Xie. (Thank you!)
+  - Added the new Usage Tracker written by Hanspeter Widmer. (Thank you!)
+  Version 4.86 (31 July 2008):
+  - Tweaked the string detection algorithm somewhat to be less strict, and
+    allow non-class leaks to be more often categorized as strings.
+  - Fixed a compilation error under Delphi 5.
+  - Made LogAllocatedBlocksToFile and ScanMemoryPoolForCorruptions thread
+    safe. (Thanks to Francois Piette.)
+  Version 4.88 (13 August 2008):
+  - Fixed compiler warnings in NoOpRegisterExpectedMemoryLeak and
+    NoOpUnRegisterExpectedMemoryLeak. (Thanks to Michael Rabatscher.)
+  - Added the Simplified Chinese translation of FastMM4Options.inc by
+    QianYuan Wang. (Thank you!)
+  - Included the updated C++ Builder files with support for BCB6 without
+    update 4 applied. (Submitted by JiYuan Xie. Thanks!)
+  - Fixed a compilation error under Delphi 5.
+  - Made LogAllocatedBlocksToFile and ScanMemoryPoolForCorruptions thread
+    safe - for real this time. (Thanks to Francois Piette.)
+  Version 4.90 (9 September 2008):
+  - Added logging of the thread ID when capturing and displaying stack
+    traces. (Suggested by Allen Bauer and Mark Edington.)
+  - Fixed a Delphi 5 compiler error under FullDebugMode. (Thanks to Maurizio
+    Lotauro and Christian-W. Budde.)
+  - Changed a default setting in FastMM4Options.inc: RawStackTraces is now
+    off by default due to the high number of support requests I receive with
+    regards to the false postives it may cause. I recommend compiling debug
+    builds of applications with the "Stack Frames" option enabled.
+  - Fixed a compilation error under Kylix. (Thanks to Werner Bochtler.)
+  - Official support for Delphi 2009.
+  Version 4.92 (25 November 2008):
+  - Added the DisableLoggingOfMemoryDumps option under FullDebugMode. When
+    this option is set, memory dumps will not be logged for memory leaks or
+    errors. (Thanks to Patrick van Logchem.)
+  - Exposed the class and string type detection code in the interface section
+    for use in application code (if required). (Requested by Patrick van
+    Logchem.)
+  - Fixed a bug in SetMMLogFileName that could cause the log file name to be
+    set incorrectly.
+  - Added BCB4 support. (Thanks to Norbert Spiegel.)
+  - Included the updated Czech translation by Rene Mihula.
+  - When FastMM raises an error due to a freed block being modified, it now
+    logs detail about which bytes in the block were modified.
+  Version 4.94 (28 August 2009):
+  - Added the DoNotInstallIfDLLMissing option that prevents FastMM from
+    installing itself if the FastMM_FullDebugMode.dll library is not
+    available. (Only applicable when FullDebugMode and LoadDebugDLLDynamically
+    are both enabled.) This is useful when the same executable will be used for
+    both debugging and deployment - when the debug support DLL is available
+    FastMM will be installed in FullDebugMode, and otherwise the default memory
+    manager will be used.
+  - Added the FullDebugModeWhenDLLAvailable option that combines the
+    FullDebugMode, LoadDebugDLLDynamically and DoNotInstallIfDLLMissing options.
+  - Re-enabled RawStackTraces by default. The frame based stack traces (even
+    when compiling with stack frames enabled) are generally too incomplete.
+  - Improved the speed of large block operations under FullDebugMode: Since
+    large blocks are never reused, there is no point in clearing them before
+    and after use (so it does not do that anymore).
+  - If an error occurs in FullDebugMode and FastMM is unable to append to the
+    log file, it will attempt to write to a log file of the same name in the
+    "My Documents" folder. This feature is helpful when the executable resides
+    in a read-only location and the default log file, which is derived from the
+    executable name, would thus not be writeable.
+  - Added support for controlling the error log file location through an
+    environment variable. If the 'FastMMLogFilePath' environment variable is
+    set then any generated error logs will be written to the specified folder
+    instead of the default location (which is the same folder as the
+    application).
+  - Improved the call instruction detection code in the FastMM_FullDebugMode
+    library. (Thanks to the JCL team.)
+  - Improved the string leak detection and reporting code. (Thanks to Uwe
+    Schuster.)
+  - New FullDebugMode feature: Whenever FreeMem or ReallocMem is called, FastMM
+    will check that the block was actually allocated through the same FastMM
+    instance. This is useful for tracking down memory manager sharing issues.
+  - Compatible with Delphi 2010.
+  Version 4.96 (31 August 2010):
+  - Reduced the minimum block size to 4 bytes from the previous value of 12
+    bytes (only applicable to 8 byte alignment). This reduces memory usage if
+    the application allocates many blocks <= 4 bytes in size.
+  - Added colour-coded change indication to the FastMM usage tracker, making
+    it easier to spot changes in the memory usage grid. (Thanks to Murray
+    McGowan.)
+  - Added the SuppressFreeMemErrorsInsideException FullDebugMode option: If
+    FastMM encounters a problem with a memory block inside the FullDebugMode
+    FreeMem handler then an "invalid pointer operation" exception will usually
+    be raised. If the FreeMem occurs while another exception is being handled
+    (perhaps in the try.. finally code) then the original exception will be
+    lost. With this option set FastMM will ignore errors inside FreeMem when an
+    exception is being handled, thus allowing the original exception to
+    propagate. This option is on by default. (Thanks to Michael Hieke.)
+  - Fixed Windows 95 FullDebugMode support that was broken in 4.94. (Thanks to
+    Richard Bradbrook.)
+  - Fixed a bug affecting GetMemoryMap performance and accuracy of measurements
+    above 2GB if a large address space is not enabled for the project. (Thanks
+    to Michael Hieke.)
+  - Added the FullDebugModeRegisterAllAllocsAsExpectedMemoryLeak boolean flag.
+    When set, all allocations are automatically registered as expected memory
+    leaks. Only available in FullDebugMode. (Thanks to Brian Cook.)
+  - Compatible with Delphi XE.
+  Version 4.97 (30 September 2010):
+  - Fixed a crash bug (that crept in in 4.96) that may manifest itself when
+    resizing a block to 4 bytes or less.
+  - Added the UseSwitchToThread option. Set this option to call SwitchToThread
+    instead of sitting in a "busy waiting" loop when a thread contention
+    occurs. This is used in conjunction with the NeverSleepOnThreadContention
+    option, and has no effect unless NeverSleepOnThreadContention is also
+    defined. This option may improve performance with many CPU cores and/or
+    threads of different priorities. Note that the SwitchToThread API call is
+    only available on Windows 2000 and later. (Thanks to Zach Saw.)
+  Version 4.98 (23 September 2011):
+  - Added the FullDebugModeCallBacks define which adds support for memory
+    manager event callbacks. This allows the application to be notified of
+    memory allocations, frees and reallocations as they occur. (Thanks to
+    Jeroen Pluimers.)
+  - Added security options ClearMemoryBeforeReturningToOS and
+    AlwaysClearFreedMemory to force the clearing of memory blocks after being
+    freed. This could possibly provide some protection against information
+    theft, but at a significant performance penalty. (Thanks to Andrey
+    Sozonov.)
+  - Shifted the code in the initialization section to a procedure
+    RunInitializationCode. This allows the startup code to be called before
+    InitUnits, which is required by some software protection tools.
+  - Added support for Delphi XE2 (Windows 32-bit and Windows 64-bit platforms
+    only).
+  Version 4.99 (6 November 2011):
+  - Fixed crashes in the 64-bit BASM codepath when more than 4GB of memory is
+    allocated.
+  - Fixed bad record alignment under 64-bit that affected performance.
+  - Fixed compilation errors with some older compilers.
+  Version 4.991 (3 September 2012)
+  - Added the LogMemoryManagerStateToFile call. This call logs a summary of
+    the memory manager state to file: The total allocated memory, overhead,
+    efficiency, and a breakdown of allocated memory by class and string type.
+    This call may be useful to catch objects that do not necessarily leak, but
+    do linger longer than they should.
+  - OS X support added by Sebastian Zierer
+  - Compatible with Delphi XE3
+  Version 5.0 (30 April 2017)
+  - Added multi-thread memory pool by An Pham
+  - Use hash for tracking expected memory leak by An Pham
+  - Added compiler F4mReallocUpsize define to control if requested size should be increased when re-alloc by An Pham
+  - Added compiler F4mCacheThreadOSAlloc define to control if a medium memory block should be kept for re-use by An Pham

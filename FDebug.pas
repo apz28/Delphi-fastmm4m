@@ -7,10 +7,9 @@ License:
  License 2.1 (LGPL 2.1, available from
  http://www.opensource.org/licenses/lgpl-license.php).
 
- 
-Extended:
- 2017 - An Pham
-   For multi-thread memory pool
+
+Completed Change Log:
+ Please see FChange.log file
 }
 
 unit FDebug;

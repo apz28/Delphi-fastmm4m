@@ -16,7 +16,7 @@
 {.$define F4mIncludeMemoryLeakTrackingCode}
 
 // Keep a instance of requested OS block for medium block
-{.$define F4mCacheThreadOSAlloc}
+{$define F4mCacheThreadOSAlloc}
 
 // Increase requested size when doing reallocation
 {.$define F4mReallocUpsize}

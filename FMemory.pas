@@ -196,7 +196,7 @@ function AllocNewSequentialFeedMediumPool(APool: PThreadPool; AFirstBlockSize: U
 // Medium blocks must be locked.
 procedure BinMediumSequentialFeedRemainder(APool: PThreadPool);
 
-// Frees a medium block pool. Medium blocks must be locked on entry.
+// Frees a medium block pool
 function FreeMediumBlockPool(APool: PThreadPool; AMediumBlockPool: Pointer): Integer;
 
 // Gets the first and last block pointer for a small block pool
@@ -531,8 +531,8 @@ begin
 {$ifdef F4mCacheThreadOSAlloc}
   if (Shutdown = 0) and (APool <> nil) and (APool.MediumCachedOSAlloc = nil) then
   begin
-    // Reset it here while it is still hot
-    FillChar(AMediumBlockPool^, MediumBlockPoolSize, 0);
+    // Reset it here while it is still hot?
+    //FillChar(AMediumBlockPool^, MediumBlockPoolSize, 0);
     if LinkIf(APool.MediumCachedOSAlloc, AMediumBlockPool) then
     begin
       Result := ResultOK;

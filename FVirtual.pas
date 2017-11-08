@@ -56,17 +56,17 @@ uses
   FTypeLib, FType, FUtil;
 
 // Returns the class for a memory block. Returns nil if it is not a valid class
-function GetObjectClass(APointer: Pointer): TClass;
+function GetObjectClass(const APointer: Pointer): TClass;
 
 // Checks whether the given address is a valid address for a VMT entry.
-function IsValidVMTAddress(APAddress: Pointer; var MemSegmentSize: NativeUInt; var MemSegmentBase: Pointer): Boolean;
+function IsValidVMTAddress(const APAddress: Pointer; var MemSegmentSize: NativeUInt; var MemSegmentBase: Pointer): Boolean;
 
-function OSAlloc(Size: NativeUInt): Pointer;
-function OSAllocTopDown(Size: NativeUInt): Pointer;
-function OSAllocTryFrom(BasedAddress: Pointer; Size: NativeUInt): Pointer;
+function OSAlloc(const Size: NativeUInt): Pointer;
+function OSAllocTopDown(const Size: NativeUInt): Pointer;
+function OSAllocTryFrom(const BasedAddress: Pointer; const Size: NativeUInt): Pointer;
 
-function OSFree(P: Pointer): Boolean;
-function OSQuery(P: Pointer; out Size: NativeUInt; out BaseAddress: Pointer): TChunkStatus;
+function OSFree(const P: Pointer): Boolean;
+function OSQuery(const P: Pointer; out Size: NativeUInt; out BaseAddress: Pointer): TChunkStatus;
 
 implementation
 
@@ -74,13 +74,13 @@ uses
   Windows;
 
 // Returns the class for a memory block. Returns nil if it is not a valid class
-function GetObjectClass(APointer: Pointer): TClass;
+function GetObjectClass(const APointer: Pointer): TClass;
 var
   MemSegmentBase: Pointer;
   MemSegmentSize: NativeUInt;
 
   // Returns true if AClassPointer points to a class VMT
-  function InternalIsValidClass(AClassPointer: Pointer; ADepth: Int32 = 0): Boolean;
+  function InternalIsValidClass(const AClassPointer: Pointer; const ADepth: Int32 = 0): Boolean;
   var
     LParentClassSelfPointer: PPointer;
   begin
@@ -116,7 +116,7 @@ begin
 end;
 
 // Checks whether the given address is a valid address for a VMT entry.
-function IsValidVMTAddress(APAddress: Pointer; var MemSegmentSize: NativeUInt;
+function IsValidVMTAddress(const APAddress: Pointer; var MemSegmentSize: NativeUInt;
   var MemSegmentBase: Pointer): Boolean;
 var
   LMemInfo: TMemoryBasicInformation;
@@ -126,7 +126,7 @@ begin
   begin
     // Do we need to recheck the OS memory?
     if (NativeUInt(MemSegmentBase) > NativeUInt(APAddress))
-      or ((NativeUInt(MemSegmentBase) + MemSegmentSize) < (NativeUInt(APAddress) + SizeOf(Pointer))) then
+        or ((NativeUInt(MemSegmentBase) + MemSegmentSize) < (NativeUInt(APAddress) + SizeOf(Pointer))) then
     begin
       // Get the VM status for the pointer
       FillChar(LMemInfo, SizeOf(LMemInfo), 0);
@@ -146,7 +146,7 @@ begin
     Result := False;
 end;
 
-function OSAlloc(Size: NativeUInt): Pointer;
+function OSAlloc(const Size: NativeUInt): Pointer;
 begin
   Result := VirtualAlloc(nil, Size, MEM_COMMIT, PAGE_READWRITE);
 
@@ -157,7 +157,7 @@ begin
 {$endif}
 end;
 
-function OSAllocTopDown(Size: NativeUInt): Pointer;
+function OSAllocTopDown(const Size: NativeUInt): Pointer;
 begin
   Result := VirtualAlloc(nil, Size, MEM_COMMIT or MEM_TOP_DOWN, PAGE_READWRITE);
 
@@ -168,29 +168,31 @@ begin
 {$endif}
 end;
 
-function OSAllocTryFrom(BasedAddress: Pointer; Size: NativeUInt): Pointer;
+function OSAllocTryFrom(const BasedAddress: Pointer; const Size: NativeUInt): Pointer;
 begin
   Result := VirtualAlloc(BasedAddress, Size, MEM_RESERVE, PAGE_READWRITE);
   if Result <> nil then
     Result := VirtualAlloc(BasedAddress, Size, MEM_COMMIT, PAGE_READWRITE);
 
 {$ifdef F4mStatisticInfo}
-  LockInc(@StatisticCalls.OSAllocCount);
+  LockInc(@StatisticCalls.OSAllocExtCount);
   if Result = nil then
     LockInc(@StatisticCalls.OSAllocFailCount);
 {$endif}
 end;
 
-function OSFree(P: Pointer): Boolean;
+function OSFree(const P: Pointer): Boolean;
 begin
   Result := VirtualFree(P, 0, MEM_RELEASE);
 
 {$ifdef F4mStatisticInfo}
   LockInc(@StatisticCalls.OSFreeCount);
+  if not Result then
+    LockInc(@StatisticCalls.OSFreeFailCount);
 {$endif}
 end;
 
-function OSQuery(P: Pointer; out Size: NativeUInt; out BaseAddress: Pointer): TChunkStatus;
+function OSQuery(const P: Pointer; out Size: NativeUInt; out BaseAddress: Pointer): TChunkStatus;
 var
   LMemInfo: TMemoryBasicInformation;
 begin

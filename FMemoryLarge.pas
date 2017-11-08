@@ -84,13 +84,13 @@ var
   LLargeUsedBlockSize: NativeUInt;
 begin
   Assert(APool <> nil);
-  Assert(Size > MaximumMediumBlockUserSize);
+  Assert(Size > CMaximumMediumBlockUserSize);
 
   // Pad the block size to include the header and granularity. We also add a
   // SizeOf(Pointer) overhead so a huge block size is a multiple of 16 bytes less
   // SizeOf(Pointer) (so we can use a single move function for reallocating all block types)
-  LLargeUsedBlockSize := (Size + (LargeBlockHeaderSize + LargeBlockGranularity - 1 + BlockHeaderSize))
-    and -LargeBlockGranularity;
+  LLargeUsedBlockSize := (Size + (CLargeBlockHeaderSize + CLargeBlockGranularity - 1 + CBlockHeaderSize))
+    and -CLargeBlockGranularity;
 
   // Get the Large block
   Result := OSAllocTopDown(LLargeUsedBlockSize);
@@ -101,7 +101,7 @@ begin
     // Set the large block size and flags
     PLargeBlockHeader(Result).ThreadPool := APool;
     PLargeBlockHeader(Result).UserAllocatedSize := Size;
-    PLargeBlockHeader(Result).BlockSizeAndFlags := LLargeUsedBlockSize or IsLargeBlockFlag;
+    PLargeBlockHeader(Result).BlockSizeAndFlags := LLargeUsedBlockSize or CIsLargeBlockFlag;
 
     // Insert the large block into the linked list of large blocks
     LockAcquire(@APool.LargeBlocksLocked);
@@ -112,10 +112,11 @@ begin
     PLargeBlockHeader(Result).NextLargeBlockHeader := LOldFirstLargeBlock;
     LOldFirstLargeBlock.PreviousLargeBlockHeader := Result;
 
-    LockRelease(@APool.LargeBlocksLocked);
+    //LockRelease(@APool.LargeBlocksLocked);
+    APool.LargeBlocksLocked := 0;
 
     // Add the size of the header
-    Inc(NativeUInt(Result), LargeBlockHeaderSize);
+    Inc(NativeUInt(Result), CLargeBlockHeaderSize);
   end;
 end;
 
@@ -130,7 +131,7 @@ begin
   Assert(P <> nil);
 
   // Point to the start of the large block
-  LargeBlockHeader := Pointer(NativeUInt(P) - LargeBlockHeaderSize);
+  LargeBlockHeader := Pointer(NativeUInt(P) - CLargeBlockHeaderSize);
 
   // Get ThreadPool where the memory was allocated
   Pool := LargeBlockHeader.ThreadPool;
@@ -147,20 +148,20 @@ begin
   LNextLargeBlockHeader := LargeBlockHeader.NextLargeBlockHeader;
 
   // Is the large block segmented?
-  if (LargeBlockHeader.BlockSizeAndFlags and LargeBlockIsSegmentedFlag) = 0 then
+  if (LargeBlockHeader.BlockSizeAndFlags and CLargeBlockIsSegmentedFlag) = 0 then
   begin
     // Single segment large block: Try to free it
     if OSFree(LargeBlockHeader) then
-      Result := ResultOK
+      Result := CResultOK
     else
-      Result := ResultError;
+      Result := CResultError;
   end
   else
   begin
     // The large block is segmented - free all segments
     LCurrentSegment := LargeBlockHeader;
-    LRemainingSize := LargeBlockHeader.BlockSizeAndFlags and ExtractLargeSizeMask;
-    Result := ResultOK;
+    LRemainingSize := LargeBlockHeader.BlockSizeAndFlags and CExtractLargeSizeMask;
+    Result := CResultOK;
     while True do
     begin
       // Get the size of the current segment
@@ -169,7 +170,7 @@ begin
       // Free the segment
       if not OSFree(LCurrentSegment) then
       begin
-        Result := ResultError;
+        Result := CResultError;
         Break;
       end;
 
@@ -184,7 +185,7 @@ begin
   end;
 
   // Success?
-  if Result = ResultOK then
+  if Result = CResultOK then
   begin
     // Remove the large block from the linked list
     LNextLargeBlockHeader.PreviousLargeBlockHeader := LPreviousLargeBlockHeader;
@@ -192,7 +193,8 @@ begin
   end;
 
   // Unlock the large blocks
-  LockRelease(@Pool.LargeBlocksLocked);
+  //LockRelease(@Pool.LargeBlocksLocked);
+  Pool.LargeBlocksLocked := 0;
 end;
 
 // Reallocates a large block to at least the requested size. Returns the new
@@ -210,13 +212,13 @@ begin
   Assert(P <> nil);
 
   // Point to the start of the large block
-  LargeBlockHeader := Pointer(NativeUInt(P) - LargeBlockHeaderSize);
+  LargeBlockHeader := Pointer(NativeUInt(P) - CLargeBlockHeaderSize);
 
   // Get the block header
-  LBlockSizeAndFlags := PNativeUInt(NativeUInt(P) - BlockHeaderSize)^;
+  LBlockSizeAndFlags := PNativeUInt(NativeUInt(P) - CBlockHeaderSize)^;
 
   // Subtract the overhead to determine the useable size in the large block.
-  LOldAvailableSize := (LBlockSizeAndFlags and ExtractLargeSizeMask) - (LargeBlockHeaderSize + BlockHeaderSize);
+  LOldAvailableSize := (LBlockSizeAndFlags and CExtractLargeSizeMask) - (CLargeBlockHeaderSize + CBlockHeaderSize);
 
   // Is it an upsize or a downsize?
   if Size > LOldAvailableSize then
@@ -234,22 +236,22 @@ begin
       LNewAllocSize := LMinimumUpsize;
 {$else}
     // Need round up for the special move
-    LNewAllocSize := (Size + (MinimumBlockAlignment - 1)) and -MinimumBlockAlignment;
+    LNewAllocSize := (Size + (CMinimumBlockAlignment - 1)) and -CMinimumBlockAlignment;
 {$endif}
 
     // Can another large block segment be allocated directly after this segment,
     // thus negating the need to move the data?
-    LNextSegmentPointer := Pointer(NativeUInt(P) - LargeBlockHeaderSize + (LBlockSizeAndFlags and ExtractLargeSizeMask));
+    LNextSegmentPointer := Pointer(NativeUInt(P) - CLargeBlockHeaderSize + (LBlockSizeAndFlags and CExtractLargeSizeMask));
     if OSQuery(LNextSegmentPointer, MemSegmentSize, MemSegmentBase) = csUnallocated then
     begin
       // Round the region size to the previous 64K
-      MemSegmentSize := MemSegmentSize and -LargeBlockGranularity;
+      MemSegmentSize := MemSegmentSize and -CLargeBlockGranularity;
 
       // Enough space to grow in place?
       if MemSegmentSize > (Size - LOldAvailableSize) then
       begin
         // There is enough space after the block to extend it - determine by how much
-        LNewSegmentSize := (LNewAllocSize - LOldAvailableSize + (LargeBlockGranularity - 1)) and -LargeBlockGranularity;
+        LNewSegmentSize := (LNewAllocSize - LOldAvailableSize + (CLargeBlockGranularity - 1)) and -CLargeBlockGranularity;
         if LNewSegmentSize > MemSegmentSize then
           LNewSegmentSize := MemSegmentSize;
           
@@ -257,7 +259,7 @@ begin
         begin
           // Update the requested size
           LargeBlockHeader.UserAllocatedSize := Size;
-          LargeBlockHeader.BlockSizeAndFlags := (LargeBlockHeader.BlockSizeAndFlags + LNewSegmentSize) or LargeBlockIsSegmentedFlag;
+          LargeBlockHeader.BlockSizeAndFlags := (LargeBlockHeader.BlockSizeAndFlags + LNewSegmentSize) or CLargeBlockIsSegmentedFlag;
 
           // Success
           Result := P;
@@ -275,11 +277,11 @@ begin
       
       // If it's a large block - store the actual user requested size (it may
       // not be if the block that is being reallocated from was previously downsized)
-      if LNewAllocSize > MaximumMediumBlockUserSize then
-        PLargeBlockHeader(NativeUInt(Result) - LargeBlockHeaderSize).UserAllocatedSize := Size;
+      if LNewAllocSize > CMaximumMediumBlockUserSize then
+        PLargeBlockHeader(NativeUInt(Result) - CLargeBlockHeaderSize).UserAllocatedSize := Size;
 
       // The user allocated size is stored for large blocks
-      LOldUserSize := PLargeBlockHeader(NativeUInt(P) - LargeBlockHeaderSize).UserAllocatedSize;
+      LOldUserSize := PLargeBlockHeader(NativeUInt(P) - CLargeBlockHeaderSize).UserAllocatedSize;
 
       // The number of bytes to move is the old user size.
 {$ifdef F4mUseCustomVariableSizeMoveRoutines}
@@ -305,7 +307,7 @@ begin
     end;
 
     // Need round up for the special move
-    LNewAllocSize := (Size + (MinimumBlockAlignment - 1)) and -MinimumBlockAlignment;
+    LNewAllocSize := (Size + (CMinimumBlockAlignment - 1)) and -CMinimumBlockAlignment;
 
     // The block is less than half the old size: reallocate
     Result := FGetMemPool(LargeBlockHeader.ThreadPool, LNewAllocSize);
@@ -331,27 +333,31 @@ begin
   end;
 end;
 
+procedure InitializeMemoryLargePool(const APool: PThreadPool);
+begin
+  APool.LargeBlocksCircularList.PreviousLargeBlockHeader := @APool.LargeBlocksCircularList;
+  APool.LargeBlocksCircularList.NextLargeBlockHeader := @APool.LargeBlocksCircularList;
+end;
+
 procedure FreeAllMemoryLarge;
-  procedure FreeAllMemoryLargePool(APool: PThreadPool);
+  procedure FreeAllMemoryLargePool(const APool: PThreadPool);
   var
-    LPLargeBlock, LPNextLargeBlock: PLargeBlockHeader;
+    LPLargeBlockHeader, LPNextLargeBlockHeader: PLargeBlockHeader;
   begin
-    LPLargeBlock := APool.LargeBlocksCircularList.NextLargeBlockHeader;
-    while LPLargeBlock <> @APool.LargeBlocksCircularList do
+    LPLargeBlockHeader := APool.LargeBlocksCircularList.NextLargeBlockHeader;
+    while LPLargeBlockHeader <> @APool.LargeBlocksCircularList do
     begin
       // Get the next large block
-      LPNextLargeBlock := LPLargeBlock.NextLargeBlockHeader;
+      LPNextLargeBlockHeader := LPLargeBlockHeader.NextLargeBlockHeader;
 
       // Free this large block
-      FreeMemLarge(LPLargeBlock);
+      FreeMemLarge(LPLargeBlockHeader);
 
       // Next large block
-      LPLargeBlock := LPNextLargeBlock;
+      LPLargeBlockHeader := LPNextLargeBlockHeader;
     end;
 
-    // There are no large blocks allocated
-    APool.LargeBlocksCircularList.PreviousLargeBlockHeader := @APool.LargeBlocksCircularList;
-    APool.LargeBlocksCircularList.NextLargeBlockHeader := @APool.LargeBlocksCircularList;
+    InitializeMemoryLargePool(APool);
   end;
 var
   I: Int32;
@@ -361,11 +367,6 @@ begin
 end;
 
 procedure InitializeMemoryLarge;
-  procedure InitializeMemoryLargePool(APool: PThreadPool);
-  begin
-    APool.LargeBlocksCircularList.PreviousLargeBlockHeader := @APool.LargeBlocksCircularList;
-    APool.LargeBlocksCircularList.NextLargeBlockHeader := @APool.LargeBlocksCircularList;
-  end;
 var
   I: Int32;
 begin

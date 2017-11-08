@@ -56,16 +56,17 @@ uses
   FTypeLib, FType, FUtil, FVirtual; // System
 
 const
-  ExpectedMemoryLeaksListSizeAlloc = 64 * 1024;
-  ExpectedMemoryLeaksListSize = ExpectedMemoryLeaksListSizeAlloc div SizeOf(Pointer);
+  CExpectedMemoryLeaksListSizeAlloc = 64 * 1024;
+  CExpectedMemoryLeaksListSize = CExpectedMemoryLeaksListSizeAlloc div SizeOf(Pointer);
 {$if SizeOf(Pointer) = 4}
-  ExpectedMemoryLeaksListSizePrim = 16381;
+  CExpectedMemoryLeaksListSizePrim = 16381;
 {$else}
-  ExpectedMemoryLeaksListSizePrim = 8191;
+  CExpectedMemoryLeaksListSizePrim = 8191;
 {$ifend}
   
 type
   // Leaked class type
+  PLeakedClass = ^TLeakedClass;
   TLeakedClass = packed record
     ClassPointer: TClass;
     NumLeaks: UInt32;
@@ -75,7 +76,7 @@ type
   TLeakedClasses = array[0..255] of TLeakedClass;
 
   // Leak statistics for a small block type
-  TSmallBlockLeaks = array[0..NumSmallBlockTypes - 1] of TLeakedClasses;
+  TSmallBlockLeaks = array[0..CNumSmallBlockTypes - 1] of TLeakedClasses;
 
   // A leaked medium or large block
   TMediumAndLargeBlockLeaks = array[0..4095] of NativeUInt;
@@ -97,14 +98,14 @@ const
   {-------------------Memory leak messages (may be localized)-------------}
   
   // Leak checking messages
-  LeakMessageHeader: PAnsiChar = 'An unexpected memory leak has occurred. ';
-  SmallLeakDetail: PAnsiChar = 'The unexpected small block leaks are:'#13#10;
-  LargeLeakDetail: PAnsiChar = 'The sizes of unexpected leaked medium and large blocks are: ';
-  BytesMessage: PAnsiChar = ' bytes: ';
-  UnknownClassNameMsg: PAnsiChar = 'Unknown';
+  CLeakMessageHeader: PAnsiChar = 'An unexpected memory leak has occurred. ';
+  CSmallLeakDetail: PAnsiChar = 'The unexpected small block leaks are:'#13#10;
+  CLargeLeakDetail: PAnsiChar = 'The sizes of unexpected leaked medium and large blocks are: ';
+  CBytesMessage: PAnsiChar = ' bytes: ';
+  CUnknownClassNameMsg: PAnsiChar = 'Unknown';
 
-  AnsiStringBlockMessage: PAnsiChar = 'AnsiString';
-  UnicodeStringBlockMessage: PAnsiChar = 'UnicodeString';
+  CAnsiStringBlockMessage: PAnsiChar = 'AnsiString';
+  CUnicodeStringBlockMessage: PAnsiChar = 'UnicodeString';
 
 type
   // Have to redeclare StrRec here, because it is not in the interface section of system.pas
@@ -144,7 +145,7 @@ begin
     Result := AppendToBuffer(@LPClassName^[1], Length(LPClassName^), ADestination);
   end
   else
-    Result := AppendToBuffer(UnknownClassNameMsg, Length(UnknownClassNameMsg), ADestination);
+    Result := AppendToBuffer(CUnknownClassNameMsg, Length(CUnknownClassNameMsg), ADestination);
 end;
 
 procedure FinalizeTrackLeak;
@@ -177,7 +178,7 @@ begin
 
   // Allocate the list if it does not exist
   if ExpectedMemoryLeaks = nil then
-    ExpectedMemoryLeaks := OSAlloc(ExpectedMemoryLeaksListSizeAlloc);
+    ExpectedMemoryLeaks := OSAlloc(CExpectedMemoryLeaksListSizeAlloc);
 end;
 
 // Locks the expected leaks. Returns false if the list could not be allocated.
@@ -197,7 +198,7 @@ begin
   if (ExpectedMemoryLeaks <> nil) and (ExpectedMemoryLeaksCount > 0) then
   begin
     C := ExpectedMemoryLeaksScanCollisions;
-    I := NativeUInt(P) mod ExpectedMemoryLeaksListSizePrim;
+    I := NativeUInt(P) mod CExpectedMemoryLeaksListSizePrim;
     while C > 0 do
     begin
       if ExpectedMemoryLeaks[I] = P then
@@ -207,7 +208,7 @@ begin
       end;
 
       Inc(I);
-      if I >= ExpectedMemoryLeaksListSize then
+      if I >= CExpectedMemoryLeaksListSize then
         I := 0;
 
       Dec(C);
@@ -224,22 +225,23 @@ begin
   else
     Result := True;
 
-  LockRelease(@ExpectedMemoryLeaksLocked);
+  //LockRelease(@ExpectedMemoryLeaksLocked);
+  ExpectedMemoryLeaksLocked := 0;
 end;
 
 function RegisterExpectedMemoryLeak(P: Pointer): Boolean;
 var
   I, C: Int32;
 begin
-  if LockExpectedMemoryLeaksList and (P <> nil) and (ExpectedMemoryLeaksCount < ExpectedMemoryLeaksListSize) then
+  if LockExpectedMemoryLeaksList and (P <> nil) and (ExpectedMemoryLeaksCount < CExpectedMemoryLeaksListSize) then
   begin
     C := 1;
-    I := NativeUInt(P) mod ExpectedMemoryLeaksListSizePrim;
+    I := NativeUInt(P) mod CExpectedMemoryLeaksListSizePrim;
     while ExpectedMemoryLeaks[I] <> nil do
     begin
       Inc(C);
       Inc(I);
-      if I >= ExpectedMemoryLeaksListSize then
+      if I >= CExpectedMemoryLeaksListSize then
         I := 0;
     end;
 
@@ -253,7 +255,8 @@ begin
   else
     Result := False;
 
-  LockRelease(@ExpectedMemoryLeaksLocked);
+  //LockRelease(@ExpectedMemoryLeaksLocked);
+  ExpectedMemoryLeaksLocked := 0;
 end;
 
 function UnregisterExpectedMemoryLeak(P: Pointer): Boolean;
@@ -269,7 +272,8 @@ begin
   else
     Result := False;
 
-  LockRelease(@ExpectedMemoryLeaksLocked);
+  //LockRelease(@ExpectedMemoryLeaksLocked);
+  ExpectedMemoryLeaksLocked :=0;
 end;
 
 // Checks for memory leaks on shutdown
@@ -314,7 +318,7 @@ var
     while NativeUInt(LCurPtr) <= NativeUInt(LEndPtr) do
     begin
       // Is this block an unexpected leak?
-      if ((PNativeUInt(NativeUInt(LCurPtr) - BlockHeaderSize)^ and IsFreeBlockFlag) = 0)
+      if ((PNativeUInt(NativeUInt(LCurPtr) - CBlockHeaderSize)^ and CIsFreeBlockFlag) = 0)
         and (not IsExpectedMemoryLeak(LCurPtr)) then
       begin
         LExpectedLeaksOnly := False;
@@ -344,7 +348,7 @@ var
             begin
               // Does the string fit?
               if (LStringLength > 0)
-                and ((APSmallBlockPool.BlockType.BlockSize - BlockHeaderSize - SizeOf(StrRec)) div LElemSize > LStringLength) then
+                and ((APSmallBlockPool.BlockType.BlockSize - CBlockHeaderSize - SizeOf(StrRec)) div LElemSize > LStringLength) then
               begin
                 // It is possibly a string
                 LPossibleString := True;
@@ -419,11 +423,11 @@ var
       LPMediumBlock := GetFirstMediumBlockInPool(APool, LPMediumBlockPoolHeader);
       while LPMediumBlock <> nil do
       begin
-        LBlockSizeAndFlags := PNativeUInt(NativeUInt(LPMediumBlock) - BlockHeaderSize)^;
+        LBlockSizeAndFlags := PNativeUInt(NativeUInt(LPMediumBlock) - CBlockHeaderSize)^;
         // Is the block in use?
-        if (LBlockSizeAndFlags and IsFreeBlockFlag) = 0 then
+        if (LBlockSizeAndFlags and CIsFreeBlockFlag) = 0 then
         begin
-          if (LBlockSizeAndFlags and IsSmallBlockPoolInUseFlag) <> 0 then
+          if (LBlockSizeAndFlags and CIsSmallBlockPoolInUseFlag) <> 0 then
           begin
             // Get all the leaks for the small block pool
             CheckSmallBlockPoolForLeaksPool(APool, LPMediumBlock);
@@ -438,7 +442,7 @@ var
                 LExpectedLeaksOnly := False;
 
                 // Add the leak to the list
-                LBlockSize := (LBlockSizeAndFlags and ExtractMediumSizeMask) - BlockHeaderSize;
+                LBlockSize := (LBlockSizeAndFlags and CExtractMediumSizeMask) - CBlockHeaderSize;
                 LMediumAndLargeBlockLeaks[LNumMediumAndLargeLeaks] := LBlockSize;
                 Inc(LNumMediumAndLargeLeaks);
               end;
@@ -460,12 +464,12 @@ var
       and (LNumMediumAndLargeLeaks < Length(LMediumAndLargeBlockLeaks)) do
     begin
       // Is it an expected leak?
-      if not IsExpectedMemoryLeak(Pointer(NativeUInt(LPLargeBlock) + LargeBlockHeaderSize)) then
+      if not IsExpectedMemoryLeak(Pointer(NativeUInt(LPLargeBlock) + CLargeBlockHeaderSize)) then
       begin
         // Add the leak
         LExpectedLeaksOnly := False;
-        LBlockSize := (LPLargeBlock.BlockSizeAndFlags and ExtractLargeSizeMask)
-          - BlockHeaderSize - LargeBlockHeaderSize;
+        LBlockSize := (LPLargeBlock.BlockSizeAndFlags and CExtractLargeSizeMask)
+          - CBlockHeaderSize - CLargeBlockHeaderSize;
         LMediumAndLargeBlockLeaks[LNumMediumAndLargeLeaks] := LBlockSize;
         Inc(LNumMediumAndLargeLeaks);
       end;
@@ -499,12 +503,12 @@ begin
     LPreviousBlockSize := 0;
 
     // Set up the leak message header so long
-    LMsgPtr := AppendToBuffer(LeakMessageHeader, Length(LeakMessageHeader), LMsgPtr);
+    LMsgPtr := AppendToBuffer(CLeakMessageHeader, Length(CLeakMessageHeader), LMsgPtr);
 
     // Step through all the small block types
-    for LBlockTypeInd := 0 to (NumSmallBlockTypes - 1) do
+    for LBlockTypeInd := 0 to (CNumSmallBlockTypes - 1) do
     begin
-      LThisBlockSize := CSmallBlockSizes[LBlockTypeInd].BlockSize - BlockHeaderSize;
+      LThisBlockSize := CSmallBlockSizes[LBlockTypeInd].BlockSize - CBlockHeaderSize;
       LBlockSizeHeaderAdded := False;
 
       // Any leaks?
@@ -520,7 +524,7 @@ begin
           // Need to add the header?
           if not LSmallLeakHeaderAdded then
           begin
-            LMsgPtr := AppendToBuffer(SmallLeakDetail, Length(SmallLeakDetail), LMsgPtr);
+            LMsgPtr := AppendToBuffer(CSmallLeakDetail, Length(CSmallLeakDetail), LMsgPtr);
             LSmallLeakHeaderAdded := True;
           end;
 
@@ -533,7 +537,7 @@ begin
             LMsgPtr := AppendToBuffer('-', LMsgPtr);
             LMsgPtr := AppendToBuffer(' ', LMsgPtr);
             LMsgPtr := AppendToBuffer(LThisBlockSize, LMsgPtr);
-            LMsgPtr := AppendToBuffer(BytesMessage, Length(BytesMessage), LMsgPtr);
+            LMsgPtr := AppendToBuffer(CBytesMessage, Length(CBytesMessage), LMsgPtr);
             LBlockSizeHeaderAdded := True;
           end
           else
@@ -547,17 +551,17 @@ begin
             // Unknown
             0:
             begin
-              LMsgPtr := AppendToBuffer(UnknownClassNameMsg, Length(UnknownClassNameMsg), LMsgPtr);
+              LMsgPtr := AppendToBuffer(CUnknownClassNameMsg, Length(CUnknownClassNameMsg), LMsgPtr);
             end;
             // AnsiString
             1:
             begin
-              LMsgPtr := AppendToBuffer(AnsiStringBlockMessage, Length(AnsiStringBlockMessage), LMsgPtr);
+              LMsgPtr := AppendToBuffer(CAnsiStringBlockMessage, Length(CAnsiStringBlockMessage), LMsgPtr);
             end;
             // UnicodeString
             2:
             begin
-              LMsgPtr := AppendToBuffer(UnicodeStringBlockMessage, Length(UnicodeStringBlockMessage), LMsgPtr);
+              LMsgPtr := AppendToBuffer(CUnicodeStringBlockMessage, Length(CUnicodeStringBlockMessage), LMsgPtr);
             end;
             // Classes
             else
@@ -578,8 +582,8 @@ begin
       // leaks if the minimum alignment was set to 16 bytes after the leaked
       // blocks were allocated.
       if LBlockSizeHeaderAdded
-        or (MinimumBlockAlignment = 8)
-        or (((LThisBlockSize + BlockHeaderSize) and 15) = 0) then
+        or (CMinimumBlockAlignment = 8)
+        or (((LThisBlockSize + CBlockHeaderSize) and 15) = 0) then
       begin
         LPreviousBlockSize := LThisBlockSize;
       end;
@@ -596,7 +600,7 @@ begin
       end;
 
       // Add the medium/large block leak message
-      LMsgPtr := AppendToBuffer(LargeLeakDetail, Length(LargeLeakDetail), LMsgPtr);
+      LMsgPtr := AppendToBuffer(CLargeLeakDetail, Length(CLargeLeakDetail), LMsgPtr);
 
       // List all the blocks
       for LBlockInd := 0 to (LNumMediumAndLargeLeaks - 1) do

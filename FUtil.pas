@@ -53,20 +53,20 @@ interface
 {$include FOption.inc}
 
 uses
-  FTypeLib, FType; // System
+  FTypeLib; // System
 
 const
   // New line
-  NL: PAnsiChar = #13#10;
+  CNL: PAnsiChar = #13#10;
 
   // Hexadecimal characters
-  HexTable: array[0..15] of AnsiChar = (
+  CHexTable: array[0..15] of AnsiChar = (
     '0', '1', '2', '3', '4', '5', '6', '7',
     '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'
   );
 
 procedure LockAcquire(AAddress: PByte);
-procedure LockRelease(AAddress: PByte);
+//procedure LockRelease(AAddress: PByte);
 
 // Compare [AAddress] with CompareVal
 // If Equal: [AAddress] := NewVal and Result = CompareVal
@@ -74,6 +74,7 @@ procedure LockRelease(AAddress: PByte);
 function LockCmpxchg(CompareVal, NewVal: Byte; AAddress: PByte): Byte;
 function LockCmpxchgPointer(CompareVal, NewVal: Pointer; AAddress: PPointer): Pointer;
 
+procedure LockDec(AValue: PNativeUInt);
 procedure LockInc(AValue: PNativeUInt);
 function LockxchgInc(AValue: PNativeUInt): NativeUInt;
 function TryLockAcquire(AAddress: PByte): Boolean;
@@ -81,32 +82,28 @@ procedure ThreadYield(var SpinCounter: NativeUInt);
 
 function FindFirstSetBit(AValue: UInt32): UInt32;
 
-function LinkIf(var Head: PLinkNode; ANode: PLinkNode): Boolean;
-function UnlinkIf(var Head: PLinkNode): PLinkNode;
-
-
 {$ifdef F4mUseCustomFixedSizeMoveRoutines}
 {$ifdef CPU386}
-procedure Move12(const ASource; var ADest; ACount: NativeInt);
-procedure Move20(const ASource; var ADest; ACount: NativeInt);
-procedure Move28(const ASource; var ADest; ACount: NativeInt);
-procedure Move36(const ASource; var ADest; ACount: NativeInt);
-procedure Move44(const ASource; var ADest; ACount: NativeInt);
-procedure Move52(const ASource; var ADest; ACount: NativeInt);
-procedure Move60(const ASource; var ADest; ACount: NativeInt);
-procedure Move68(const ASource; var ADest; ACount: NativeInt);
+procedure Move12(const ASource; var Dest; ACount: NativeInt);
+procedure Move20(const ASource; var Dest; ACount: NativeInt);
+procedure Move28(const ASource; var Dest; ACount: NativeInt);
+procedure Move36(const ASource; var Dest; ACount: NativeInt);
+procedure Move44(const ASource; var Dest; ACount: NativeInt);
+procedure Move52(const ASource; var Dest; ACount: NativeInt);
+procedure Move60(const ASource; var Dest; ACount: NativeInt);
+procedure Move68(const ASource; var Dest; ACount: NativeInt);
 
-procedure MoveX8LP(const ASource; var ADest; ACount: NativeInt);
+procedure MoveX8LP(const ASource; var Dest; ACount: NativeInt);
 {$endif}
 
 {$ifdef CPUX64}
-procedure Move8(const ASource; var ADest; ACount: NativeInt);
-procedure Move24(const ASource; var ADest; ACount: NativeInt);
-procedure Move40(const ASource; var ADest; ACount: NativeInt);
-procedure Move56(const ASource; var ADest; ACount: NativeInt);
+procedure Move8(const ASource; var Dest; ACount: NativeInt);
+procedure Move24(const ASource; var Dest; ACount: NativeInt);
+procedure Move40(const ASource; var Dest; ACount: NativeInt);
+procedure Move56(const ASource; var Dest; ACount: NativeInt);
 {$endif}
 
-procedure MoveX16LP(const ASource; var ADest; ACount: NativeInt);
+procedure MoveX16LP(const ASource; var Dest; ACount: NativeInt);
 {$endif}
 
 // Appends the source text to the destination and returns the new destination position
@@ -124,9 +121,13 @@ function AppendToBufferLn(const ADestination: PAnsiChar): PAnsiChar;
 function AppendToBufferModuleFileName(ADestination: PAnsiChar): PAnsiChar;
 
 function FileClose(AHandle: THandle): Boolean;
+function FileCreate(AFileName: PAnsiChar; out Handle: THandle): Boolean;
 function FileDelete(AFileName: PAnsiChar): Boolean;
+function FileMoveBegin(AHandle: THandle): UInt32;
 function FileMoveEnd(AHandle: THandle): UInt32;
+function FileOpen(AFileName: PAnsiChar; out Handle: THandle): Boolean;
 function FileOpenOrCreate(AFileName: PAnsiChar; out Handle: THandle): Boolean;
+function FileRead(AHandle: THandle; var Buffer; ABytesToRead: UInt32): UInt32;
 function FileSize(AHandle: THandle): UInt32;
 function FileWrite(AHandle: THandle; const ABuffer; ABytesToWrite: UInt32): UInt32;
 function FileWriteText(AFileName: PAnsiChar; const ABuffer; ABytesToWrite: UInt32): Boolean;
@@ -140,7 +141,7 @@ procedure LockAcquire(AAddress: PByte);
 var
   SpinCounter: NativeUInt;
 begin
-  SpinCounter := DefaultSpinCounter;
+  SpinCounter := CDefaultSpinCounter;
   while LockCmpxchg(0, 1, AAddress) <> 0 do
     ThreadYield(SpinCounter);
 end;
@@ -150,23 +151,23 @@ begin
   Result := LockCmpxchg(0, 1, AAddress) = 0;
 end;
 
+(*
 procedure LockRelease(AAddress: PByte);
 asm
 {$ifdef CPU386}
   {On entry:
     eax = AAddress}
   xor ecx, ecx
-  //lock xchg [eax], cl
-  mov [eax], cl
+  lock xchg [eax], cl
 {$else}
   {On entry:
     rcx = AAddress}
   .noframe
   xor rax, rax
-  //lock xchg [rcx], al
-  mov [rcx], al
+  lock xchg [rcx], al
 {$endif}
 end;
+*)
 
 // Compare [AAddress] with CompareVal
 // If Equal: [AAddress] := NewVal and Result = CompareVal
@@ -206,6 +207,20 @@ asm
   .noframe
   mov rax, rcx
   lock cmpxchg [r8], rdx
+{$endif}
+end;
+
+procedure LockDec(AValue: PNativeUInt);
+asm
+{$ifdef CPU386}
+  {On entry:
+    eax = AValue}
+  lock sub [eax], 1
+{$else}
+  {On entry:
+    rcx = AValue}
+  .noframe
+  lock sub [rcx], 1
 {$endif}
 end;
 
@@ -286,29 +301,10 @@ asm
 {$endif}
 end;
 
-function LinkIf(var Head: PLinkNode; ANode: PLinkNode): Boolean;
-begin
-  ANode.Next := Head;
-  Result := LockCmpxchgPointer(nil, ANode, PPointer(@Head)) = nil;
-end;
-
-function UnlinkIf(var Head: PLinkNode): PLinkNode;
-var
-  NewHead: PLinkNode;
-begin
-  Result := Head;
-  if Result <> nil then
-  begin
-    NewHead := Result.Next;
-    if LockCmpxchgPointer(Result, NewHead, PPointer(@Head)) <> Result then
-      Result := nil;
-  end;
-end;
-
 {$ifdef F4mUseCustomFixedSizeMoveRoutines}
 // Fixed size move operations ignore the size parameter. All moves are assumed to be non-overlapping.
 {$ifdef CPU386}
-procedure Move12(const ASource; var ADest; ACount: NativeInt);
+procedure Move12(const ASource; var Dest; ACount: NativeInt);
 asm
   mov ecx, [eax]
   mov [edx], ecx
@@ -318,7 +314,7 @@ asm
   mov [edx + 8], eax
 end;
 
-procedure Move20(const ASource; var ADest; ACount: NativeInt);
+procedure Move20(const ASource; var Dest; ACount: NativeInt);
 asm
   mov ecx, [eax]
   mov [edx], ecx
@@ -332,7 +328,7 @@ asm
   mov [edx + 16], eax
 end;
 
-procedure Move28(const ASource; var ADest; ACount: NativeInt);
+procedure Move28(const ASource; var Dest; ACount: NativeInt);
 asm
   mov ecx, [eax]
   mov [edx], ecx
@@ -350,7 +346,7 @@ asm
   mov [edx + 24], eax
 end;
 
-procedure Move36(const ASource; var ADest; ACount: NativeInt);
+procedure Move36(const ASource; var Dest; ACount: NativeInt);
 asm
   fild qword ptr [eax]
   fild qword ptr [eax + 8]
@@ -364,7 +360,7 @@ asm
   fistp qword ptr [edx]
 end;
 
-procedure Move44(const ASource; var ADest; ACount: NativeInt);
+procedure Move44(const ASource; var Dest; ACount: NativeInt);
 asm
   fild qword ptr [eax]
   fild qword ptr [eax + 8]
@@ -380,7 +376,7 @@ asm
   fistp qword ptr [edx]
 end;
 
-procedure Move52(const ASource; var ADest; ACount: NativeInt);
+procedure Move52(const ASource; var Dest; ACount: NativeInt);
 asm
   fild qword ptr [eax]
   fild qword ptr [eax + 8]
@@ -398,7 +394,7 @@ asm
   fistp qword ptr [edx]
 end;
 
-procedure Move60(const ASource; var ADest; ACount: NativeInt);
+procedure Move60(const ASource; var Dest; ACount: NativeInt);
 asm
   fild qword ptr [eax]
   fild qword ptr [eax + 8]
@@ -418,7 +414,7 @@ asm
   fistp qword ptr [edx]
 end;
 
-procedure Move68(const ASource; var ADest; ACount: NativeInt);
+procedure Move68(const ASource; var Dest; ACount: NativeInt);
 asm
   fild qword ptr [eax]
   fild qword ptr [eax + 8]
@@ -443,7 +439,7 @@ end;
 // Variable size move procedure: Rounds ACount up to the next multiple of 8 less
 // SizeOf(Pointer). Important note: Always moves at least 8 - SizeOf(Pointer)
 // bytes (the minimum small block size with 8 byte alignment), irrespective of ACount.
-procedure MoveX8LP(const ASource; var ADest; ACount: NativeInt);
+procedure MoveX8LP(const ASource; var Dest; ACount: NativeInt);
 asm
   // Make the counter negative based: The last 4 bytes are moved separately
   sub ecx, 4
@@ -464,13 +460,13 @@ end;
 {$endif}
 
 {$ifdef CPUX64}
-procedure Move8(const ASource; var ADest; ACount: NativeInt);
+procedure Move8(const ASource; var Dest; ACount: NativeInt);
 asm
   mov rax, [rcx]
   mov [rdx], rax
 end;
 
-procedure Move24(const ASource; var ADest; ACount: NativeInt);
+procedure Move24(const ASource; var Dest; ACount: NativeInt);
 asm
   movdqa xmm0, [rcx]
   mov r8, [rcx + 16]
@@ -478,7 +474,7 @@ asm
   mov [rdx + 16], r8
 end;
 
-procedure Move40(const ASource; var ADest; ACount: NativeInt);
+procedure Move40(const ASource; var Dest; ACount: NativeInt);
 asm
   movdqa xmm0, [rcx]
   movdqa xmm1, [rcx + 16]
@@ -488,7 +484,7 @@ asm
   mov [rdx + 32], r8
 end;
 
-procedure Move56(const ASource; var ADest; ACount: NativeInt);
+procedure Move56(const ASource; var Dest; ACount: NativeInt);
 asm
   movdqa xmm0, [rcx]
   movdqa xmm1, [rcx + 16]
@@ -504,7 +500,7 @@ end;
 // Variable size move procedure: Rounds ACount up to the next multiple of 16 less
 // SizeOf(Pointer). Important note: Always moves at least 16 - SizeOf(Pointer)
 // bytes (the minimum small block size with 16 byte alignment), irrespective of ACount.
-procedure MoveX16LP(const ASource; var ADest; ACount: NativeInt);
+procedure MoveX16LP(const ASource; var Dest; ACount: NativeInt);
 asm
 {$ifdef CPU386}
   // Make the counter negative based: The last 12 bytes are moved separately
@@ -567,9 +563,9 @@ end;
 
 function AppendToBuffer(ANumber: NativeUInt; ADestination: PAnsiChar): PAnsiChar;
 const
-  MaxDigits = 32;
+  CMaxDigits = 32;
 var
-  LBuffer: array[0..MaxDigits - 1] of AnsiChar;
+  LBuffer: array[0..CMaxDigits - 1] of AnsiChar;
   LDigit: NativeUInt;
   LCount: Byte;
 begin
@@ -579,16 +575,16 @@ begin
     ANumber := ANumber div 10;
     LDigit := LDigit - (ANumber * 10);
     Inc(LCount);
-    LBuffer[MaxDigits - LCount] := AnsiChar(Ord('0') + LDigit);
+    LBuffer[CMaxDigits - LCount] := AnsiChar(Ord('0') + LDigit);
   until ANumber = 0;
 
-  System.Move(LBuffer[MaxDigits - LCount], ADestination^, LCount);
+  System.Move(LBuffer[CMaxDigits - LCount], ADestination^, LCount);
   Result := ADestination + LCount;
 end;
 
 function AppendToBufferLn(const ADestination: PAnsiChar): PAnsiChar;
 begin
-  Result := AppendToBuffer(NL, Length(NL), ADestination);
+  Result := AppendToBuffer(CNL, Length(CNL), ADestination);
 end;
 
 function AppendToBufferModuleFileName(ADestination: PAnsiChar): PAnsiChar;
@@ -612,9 +608,23 @@ begin
   Result := CloseHandle(AHandle);
 end;
 
+function FileCreate(AFileName: PAnsiChar; out Handle: THandle): Boolean;
+begin
+  Handle := CreateFileA(AFileName, GENERIC_READ or GENERIC_WRITE,
+    FILE_SHARE_READ, nil, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+  Result := Handle <> INVALID_HANDLE_VALUE;
+  if not Result then
+    Handle := 0;
+end;
+
 function FileDelete(AFileName: PAnsiChar): Boolean;
 begin
   Result := DeleteFileA(AFileName);
+end;
+
+function FileMoveBegin(AHandle: THandle): UInt32;
+begin
+  Result := SetFilePointer(AHandle, 0, nil, FILE_BEGIN);
 end;
 
 function FileMoveEnd(AHandle: THandle): UInt32;
@@ -622,11 +632,28 @@ begin
   Result := SetFilePointer(AHandle, 0, nil, FILE_END);
 end;
 
+function FileOpen(AFileName: PAnsiChar; out Handle: THandle): Boolean;
+begin
+  Handle := CreateFileA(AFileName, GENERIC_READ or GENERIC_WRITE,
+    FILE_SHARE_READ, nil, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+  Result := Handle <> INVALID_HANDLE_VALUE;
+  if not Result then
+    Handle := 0;
+end;
+
 function FileOpenOrCreate(AFileName: PAnsiChar; out Handle: THandle): Boolean;
 begin
   Handle := CreateFileA(AFileName, GENERIC_READ or GENERIC_WRITE,
     FILE_SHARE_READ, nil, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
   Result := Handle <> INVALID_HANDLE_VALUE;
+  if not Result then
+    Handle := 0;
+end;
+
+function FileRead(AHandle: THandle; var Buffer; ABytesToRead: UInt32): UInt32;
+begin
+  if not ReadFile(AHandle, Buffer, ABytesToRead, DWORD(Result), nil) then
+    Result := 0;
 end;
 
 function FileSize(AHandle: THandle): UInt32;

@@ -29,33 +29,44 @@ implementation
 uses
   Windows, FVirtual;
 
+{$ifndef F4mTestThreadPool}
+threadvar
+  ThreadPool: PThreadPool;
+{$endif}
+
 function FindFreeThreadPool: PThreadPool;
 var
+  MinP, P: PThreadPool;
   ThreadId: TThreadId;
-  I, MinIndex, ThreadIndex: Int32;
+  I, ThreadIndex: Int32;
 begin
   Result := nil;
+  
   ThreadId := GetCurrentThreadId;
-  ThreadIndex := ThreadId mod MaximumThreadPool;
-  MinIndex := ThreadIndex;
+  while (ThreadId and $ff) = 0 do
+    ThreadId := ThreadId shr 8;
+  ThreadIndex := ThreadId mod CMaximumThreadPool;
+  MinP := @ThreadPools[ThreadIndex];
 
   LockAcquire(@ThreadPoolsLocked);
 
-  for I := ThreadIndex to (MaximumThreadPool - 1) do
+  for I := ThreadIndex to (CMaximumThreadPool - 1) do
   begin
 {$ifdef F4mDebugManager}
     if I = 0 then
       Continue;
 {$endif}
 
-    if ThreadPools[I].ThreadIdc = 0 then
+    P := @ThreadPools[I];
+
+    if P.UsedCount = 0 then
     begin
-      Result := @ThreadPools[I];
+      Result := P;
       Break;
     end;
 
-    if ThreadPools[I].ThreadIdc < ThreadPools[MinIndex].ThreadIdc then
-      MinIndex := I;
+    if MinP.UsedCount > P.UsedCount then
+      MinP := P;
   end;
 
   if (Result = nil) and (ThreadIndex <> 0) then
@@ -67,116 +78,102 @@ begin
         Continue;
 {$endif}
 
-      if ThreadPools[I].ThreadIdc = 0 then
+      P := @ThreadPools[I];
+
+      if P.UsedCount = 0 then
       begin
-        Result := @ThreadPools[I];
+        Result := P;
         Break;
       end;
 
-      if ThreadPools[I].ThreadIdc < ThreadPools[MinIndex].ThreadIdc then
-        MinIndex := I;
+      if MinP.UsedCount > P.UsedCount then
+        MinP := P;
     end;
   end;
 
   if Result = nil then
-    Result := @ThreadPools[MinIndex];
+    Result := MinP;
 
-  Assert(Result.ThreadIdc < MaximumThreadPerPool);
+  Inc(Result.UsedCount);
 
-  Result.ThreadIds[Result.ThreadIdc] := ThreadId;
-  Inc(Result.ThreadIdc);
+{$ifdef F4mTrackThreadLife}
+  for I := 0 to (CMaximumThreadPerPool - 1) do
+  begin
+    if Result.ThreadIds[I] = 0 then
+    begin
+      Result.ThreadIds[I] := ThreadId;
+{$ifopt C+}
+      ThreadId := 0;
+{$endif}
+      Break;
+    end;
+  end;
+  Assert(ThreadId = 0, 'Not found slot to store thread-id from threadpool');
+{$endif}
 
-  LockRelease(@ThreadPoolsLocked);
+{$ifdef F4mStatisticInfo}
+  if Result.UsedCount > 1 then
+    LockInc(@StatisticCalls.PoolCollision);
+{$endif}
+
+  //LockRelease(@ThreadPoolsLocked);
+  ThreadPoolsLocked := 0;
 end;
 
 procedure FFinalizeThreadPool;
-  procedure FFinalizeThreadPoolAt(APool: PThreadPool; const AIndex: Int32);
-{$ifdef F4mCacheThreadOSAlloc}
-  var
-    P: Pointer;
-{$endif}
-  begin
-    APool.ThreadIds[AIndex] := 0;
-    Dec(APool.ThreadIdc);
-    if AIndex < APool.ThreadIdc then
-      Move(APool.ThreadIds[AIndex + 1], APool.ThreadIds[AIndex], (APool.ThreadIdc - AIndex) * SizeOf(TThreadId));
-
-{$ifdef F4mCacheThreadOSAlloc}
-    if (Shutdown <> 0) or (APool.ThreadIdc = 0) then
-    begin
-      P := UnlinkIf(APool.MediumCachedOSAlloc);
-      if P <> nil then
-        OSFree(P);
-    end;
-{$endif}      
-  end;
 var
+  FoundPool: PThreadPool;
+{$ifdef F4mTrackThreadLife}
   ThreadId: TThreadId;
-  I, J, ThreadIndex, FoundIndex: Int32;
+  I: Int32;
+{$endif}
 begin
-  FoundIndex := -1;
-  ThreadId := GetCurrentThreadId;
-  ThreadIndex := ThreadId mod MaximumThreadPool;
+{$ifdef F4mTestThreadPool}
+  FoundPool := @ThreadPools[0];
+{$else}
+  FoundPool := ThreadPool;
+  //ThreadPool := nil;
+{$endif}
+
+  if FoundPool = nil then
+    Exit;
 
   if Shutdown = 0 then
     LockAcquire(@ThreadPoolsLocked);
 
-  for I := ThreadIndex to (MaximumThreadPool - 1) do
+  Assert(FoundPool.UsedCount > 0, 'Invalid threadpool counter on shutdown');
+
+  Dec(FoundPool.UsedCount);
+
+{$ifdef F4mTrackThreadLife}
+  ThreadId := GetCurrentThreadId;
+  for I := 0 to (CMaximumThreadPerPool - 1) do
   begin
-    with ThreadPools[I] do
+    if FoundPool.ThreadIds[I] = ThreadId then
     begin
-      for J := 0 to (ThreadIdc - 1) do
-      begin
-        if ThreadIds[J] = ThreadId then
-        begin
-          FoundIndex := I;
-          FFinalizeThreadPoolAt(@ThreadPools[I], J);
-          Break;
-        end;
-      end;
-    end;
-
-    if FoundIndex >= 0 then
+      FoundPool.ThreadIds[I] := 0;
+{$ifopt C+}
+      ThreadId := 0; // Indicate found
+{$endif}      
       Break;
-  end;
-
-  if (FoundIndex < 0) and (ThreadIndex <> 0) then
-    for I := 0 to (ThreadIndex - 1) do
-    begin
-      with ThreadPools[I] do
-      begin
-        for J := 0 to (ThreadIdc - 1) do
-        begin
-          if ThreadIds[J] = ThreadId then
-          begin
-            FoundIndex := I;
-            FFinalizeThreadPoolAt(@ThreadPools[I], J);
-            Break;
-          end;
-        end;
-      end;
-
-      if FoundIndex >= 0 then
-        Break;
     end;
+  end;
+  Assert(ThreadId = 0, 'Not found thread-id from threadpool');
+{$endif}
 
   if Shutdown = 0 then
-    LockRelease(@ThreadPoolsLocked);
+    //LockRelease(@ThreadPoolsLocked);
+    ThreadPoolsLocked := 0;
 end;
 
 procedure InitializeMemoryThreadPool;
 var
-  I: Int32;
+  I: UInt32;
 begin
   // Initialize pool-index
-  for I := 0 to (MaximumThreadPool - 1) do
-    ThreadPools[I].IndexFlag := UInt32(I) shl MediumSlotIndexShift;
+  for I := 0 to (CMaximumThreadPool - 1) do
+    ThreadPools[I].Index := I shl CMediumSlotIndexShift;
 end;
-
-{$ifndef F4mTestThreadPool}
-threadvar
-  ThreadPool: PThreadPool;
-{$endif}
 
 function GetThreadPool: PThreadPool;
 begin

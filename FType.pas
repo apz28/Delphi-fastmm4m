@@ -56,133 +56,137 @@ uses
   FTypeLib;
   
 type
-  TThreadId = UInt32;
-
   // Move procedure type
-  TMoveProc = procedure(const ASource; var ADest; ACount: NativeInt);
+  TMoveProc = procedure(const ASource; var Dest; ACount: NativeInt);
 
 const
-  DefaultSpinCounter = 20;
+  // Maximum number of thread pools. Must not be greater than 255
+  // Prefer to be a prim number
+  CMaximumThreadPool = 251;
 
-  // Maximum number of thread pools. Must not be greater than 256
-  MaximumThreadPool = 199;
-  MaximumThreadPerPool = 20;
+  // For F4mTrackThreadLife, Maximum number of threads per pool. Must not be greater than 255
+  CMaximumThreadPerPool = 255;
 
   // The minimum block alignment. Under 64-bit blocks are always aligned to a 16 byte boundary.
   // For 32 bit, it can be 8 or 16
-  MinimumBlockAlignment = {$ifdef F4mAlign16Bytes}16{$else}8{$endif};
+  CMinimumBlockAlignment = {$ifdef F4mAlign16Bytes}16{$else}8{$endif};
 
   // The size of a medium block pool. This is allocated through OSAlloc and
   // is used to serve medium blocks. The size must be a multiple of 16 and at
   // least 4 bytes less than a multiple of 4K (the page size) to prevent a
   // possible read access violation when reading past the end of a memory block
   // in the optimized move routine (MoveX16LP).
-  MediumBlockPoolSize = 20 * 64 * 1024 - 16;
+  CMediumBlockPoolSize = 20 * 64 * 1024 - 16;
+
+  // Maximum number of global cached medium blocks. Must not be greater than 254
+  CMediumBlockPoolCachedsMax = 200;
+
+  // Maximum number of thread cached medium blocks. Must not be greater than 254
+  // and smaller than CMediumBlockPoolCachedsMax
+  CMediumBlockThreadPoolCachedsMax = 2;
 
   // The granularity of small blocks
-  SmallBlockGranularity = {$ifdef F4mAlign16Bytes}16{$else}8{$endif};
+  CSmallBlockGranularity = {$ifdef F4mAlign16Bytes}16{$else}8{$endif};
 
   // The granularity of medium blocks. Newly allocated medium blocks are
   // a multiple of this size plus MediumBlockSizeOffset, to avoid cache line conflicts
-  MediumBlockGranularity = 256;
-  MediumBlockGranularityShift = 8; // Used inplace of div/mul for speed
-  MediumBlockSizeOffset = 48;
+  CMediumBlockGranularity = 256;
+  CMediumBlockGranularityShift = 8; // Used inplace of div/mul for speed
+  CMediumBlockSizeOffset = 48;
 
   // The granularity of large blocks
-  LargeBlockGranularity = 65536;
+  CLargeBlockGranularity = 65536;
 
   // The maximum size of a small block. Blocks Larger than this are either
   // medium or large blocks.
-  MaximumSmallBlockSize = 2608;
+  CMaximumSmallBlockSize = 2608;
 
   // The smallest medium block size. (Medium blocks are rounded up to the nearest
   // multiple of MediumBlockGranularity plus MediumBlockSizeOffset)
-  MinimumMediumBlockSize = 11 * 256 + MediumBlockSizeOffset;
+  CMinimumMediumBlockSize = 11 * 256 + CMediumBlockSizeOffset;
 
   // The number of bins reserved for medium blocks
-  MediumBlockBinsPerGroup = 32;
-  MediumBlockBinsPerGroupShift = 5; // Used inplace of div/mul for speed
-  MediumBlockBinGroupCount = 32;
-  MediumBlockBinGroupCountShift = 5; // Used inplace of div/mul for speed
-  MediumBlockBinCount = MediumBlockBinGroupCount * MediumBlockBinsPerGroup;
+  CMediumBlockBinsPerGroup = 32;
+  CMediumBlockBinsPerGroupShift = 5; // Used inplace of div/mul for speed
+  CMediumBlockBinGroupCount = 32;
+  CMediumBlockBinGroupCountShift = 5; // Used inplace of div/mul for speed
+  CMediumBlockBinCount = CMediumBlockBinGroupCount * CMediumBlockBinsPerGroup;
 
   // The maximum size allocatable through medium blocks. Blocks larger than this
   // fall through to OSAlloc which is large block.
-  MaximumMediumBlockSize = MinimumMediumBlockSize + (MediumBlockBinCount - 1) * MediumBlockGranularity;
+  CMaximumMediumBlockSize = CMinimumMediumBlockSize + (CMediumBlockBinCount - 1) * CMediumBlockGranularity;
 
   // The target number of small blocks per pool. The actual number of blocks per
   // pool may be much greater for very small sizes and less for larger sizes. The
   // cost of allocating the small block pool is amortized across all the small
   // blocks in the pool, however the blocks may not all end up being used so they
   // may be lying idle.
-  TargetSmallBlocksPerPool = 48;
+  CTargetSmallBlocksPerPool = 48;
 
   // The minimum number of small blocks per pool. Any available medium block must
   // have space for roughly this many small blocks (or more) to be useable as a
   // small block pool.
-  MinimumSmallBlocksPerPool = 12;
+  CMinimumSmallBlocksPerPool = 12;
 
   // The lower and upper limits for the optimal small block pool size
-  OptimalSmallBlockPoolSizeLowerLimit = 29 * 1024 - MediumBlockGranularity + MediumBlockSizeOffset;
-  OptimalSmallBlockPoolSizeUpperLimit = 64 * 1024 - MediumBlockGranularity + MediumBlockSizeOffset;
+  COptimalSmallBlockPoolSizeLowerLimit = 29 * 1024 - CMediumBlockGranularity + CMediumBlockSizeOffset;
+  COptimalSmallBlockPoolSizeUpperLimit = 64 * 1024 - CMediumBlockGranularity + CMediumBlockSizeOffset;
 
   // The maximum small block pool size. If a free block is this size or larger then it will be split.
-  MaximumSmallBlockPoolSize = OptimalSmallBlockPoolSizeUpperLimit + MinimumMediumBlockSize;
+  CMaximumSmallBlockPoolSize = COptimalSmallBlockPoolSizeUpperLimit + CMinimumMediumBlockSize;
 
   {----------------------------Block type flags---------------------------}
 
   // The lower 3 bits in the pointer size header of small & medium blocks (4 bits in medium and
   // large blocks) are used as flags to indicate the state of the block
 
-  // First bit
-  // Set if the block is not in use
-  IsFreeBlockFlag = 1;
+  // First bit. Set if the block is not in use
+  CIsFreeBlockFlag = 1;
 
-  // Second bit
-  // Set if this is a medium block
-  IsMediumBlockFlag = 2;
+  // Second bit. Set if this is a medium block
+  CIsMediumBlockFlag = 2;
 
-  // Third bit
-  // Set if it is a medium block being used as a small block pool. Only valid if IsMediumBlockFlag is set.
-  IsSmallBlockPoolInUseFlag = 4;
+  // Third bit.Set if it is a medium block being used as a small block pool.
+  // Only valid if IsMediumBlockFlag is set.
+  CIsSmallBlockPoolInUseFlag = 4;
 
   // Set if it is a large block. Only valid if IsMediumBlockFlag is not set.
-  IsLargeBlockFlag = 4;
+  CIsLargeBlockFlag = 4;
 
   // Fourth bit -> Medium & Large block must be align at least at 16 bytes
   // Is the medium block preceding this block available?
-  PreviousMediumBlockIsFreeFlag = 8;
+  CPreviousMediumBlockIsFreeFlag = 8;
 
   // Is this large block segmented? I.e. is it actually built up from more than
   // one chunk allocated through OSAlloc? (Only used by large blocks.)
-  LargeBlockIsSegmentedFlag = 8;
+  CLargeBlockIsSegmentedFlag = 8;
 
   // The flags masks for small blocks
-  DropSmallFlagsMask = NativeUInt(-8);
-  ExtractSmallFlagsMask = 7;
+  CDropSmallFlagsMask = NativeUInt(-8);
+  CExtractSmallFlagsMask = 7;
 
   // The flags masks for medium and large blocks
-  ExtractMediumAndLargeFlagsMask = 15;
+  CExtractMediumAndLargeFlagsMask = 15;
 
   // The flag mask for large block size
-  ExtractLargeSizeMask = NativeUInt(-16);
+  CExtractLargeSizeMask = NativeUInt(-16);
 
   // The flag mask for medium block size
-  ExtractMediumSizeMask = $fffff0;
+  CExtractMediumSizeMask = $fffff0;
 
   // The flag for medium pool index
-  MediumSlotIndexShift = 24;
+  CMediumSlotIndexShift = 24;
 
   {-------------------------Block resizing constants----------------------}
 
-  SmallBlockDownsizeCheckAdder = 64;
-  SmallBlockUpsizeAdder = 32;
+  CSmallBlockDownsizeCheckAdder = 64;
+  CSmallBlockUpsizeAdder = 32;
 
   // When a medium block is reallocated to a size smaller than this, then it must
   // be reallocated to a small block and the data moved. If not, then it is
   // shrunk in place down to MinimumMediumBlockSize. Currently the limit is set
   // at a quarter of the minimum medium block size.
-  MediumInPlaceDownsizeLimit = MinimumMediumBlockSize div 4;
+  CMediumInPlaceDownsizeLimit = CMinimumMediumBlockSize div 4;
 
 type
   PPointerArray = ^TPointerArray;
@@ -208,7 +212,6 @@ type
     UpsizeMoveProcedure: TMoveProc;
 {$endif}
   end;
-
 
   // Small block type (Size = 32 bytes for 32-bit, 64 bytes for 64-bit).
   PSmallBlockType = ^TSmallBlockType;
@@ -260,9 +263,9 @@ type
 {$ifend}
   end;
 
-  TSmallBlockSizes = array[0..NumSmallBlockTypes - 1] of TSmallBlockSize;
+  TSmallBlockSizes = array[0..CNumSmallBlockTypes - 1] of TSmallBlockSize;
 
-  TSmallBlockTypes = array[0..NumSmallBlockTypes - 1] of TSmallBlockType;
+  TSmallBlockTypes = array[0..CNumSmallBlockTypes - 1] of TSmallBlockType;
 
   // Small block pool (Size = 32 bytes for 32-bit, 48 bytes for 64-bit).
   TSmallBlockPoolHeader = packed record
@@ -356,19 +359,19 @@ type
 
 const
   // The size of the block header in front of small and medium blocks
-  BlockHeaderSize = SizeOf(Pointer);
+  CBlockHeaderSize = SizeOf(Pointer);
 
   // The size of a small block pool header
-  SmallBlockPoolHeaderSize = SizeOf(TSmallBlockPoolHeader);
+  CSmallBlockPoolHeaderSize = SizeOf(TSmallBlockPoolHeader);
 
   // The size of a medium block pool header
-  MediumBlockPoolHeaderSize = SizeOf(TMediumBlockPoolHeader);
+  CMediumBlockPoolHeaderSize = SizeOf(TMediumBlockPoolHeader);
 
   // The size of the header in front of large block
-  LargeBlockHeaderSize = SizeOf(TLargeBlockHeader);
+  CLargeBlockHeaderSize = SizeOf(TLargeBlockHeader);
 
-  MaximumSmallBlockUserSize = MaximumSmallBlockSize - BlockHeaderSize;
-  MaximumMediumBlockUserSize = MaximumMediumBlockSize - BlockHeaderSize;
+  CMaximumSmallBlockUserSize = CMaximumSmallBlockSize - CBlockHeaderSize;
+  CMaximumMediumBlockUserSize = CMaximumMediumBlockSize - CBlockHeaderSize;
 
 type
   PThreadPool = ^TThreadPool;  
@@ -380,7 +383,7 @@ type
     SmallBlockTypes: TSmallBlockTypes;
 
     // Size to small block type translation table
-    AllocSize2SmallBlockTypeIndX4: array[0..(MaximumSmallBlockSize - 1) div SmallBlockGranularity] of Byte;
+    AllocSize2SmallBlockTypeIndX4: array[0..(CMaximumSmallBlockSize - 1) div CSmallBlockGranularity] of Byte;
 
     {-----------------------Medium block management-------------------------}
 
@@ -400,17 +403,18 @@ type
     MediumBlockBinGroupBitmap: UInt32;
 
     // The medium block bins: total of 32 * 32 = 1024 bins of a certain minimum size.
-    MediumBlockBinBitmaps: array[0..MediumBlockBinGroupCount - 1] of UInt32;
+    MediumBlockBinBitmaps: array[0..CMediumBlockBinGroupCount - 1] of UInt32;
 
     // The medium block bins. There are 1024 LIFO circular linked lists each
     // holding blocks of a specified minimum size. The sizes vary in size from
     // MinimumMediumBlockSize to MaximumMediumBlockSize. The bins are treated as
     // type TMediumFreeBlock to avoid pointer checks.
-    MediumBlockBins: array[0..MediumBlockBinCount - 1] of TMediumFreeBlock;
+    MediumBlockBins: array[0..CMediumBlockBinCount - 1] of TMediumFreeBlock;
 
 {$ifdef F4mCacheThreadOSAlloc}
-    MediumCachedOSAlloc: PLinkNode;
-{$endif}
+    MediumBlockPoolCacheds: PLinkNode;
+    MediumBlockPoolCachedsCount: Byte;
+{$endif}    
 
     {-------------------------Large block management------------------------}
 
@@ -423,27 +427,31 @@ type
 
     {-------------------------Thread related management------------------------}
 
-    // Index flag of this pool used with medium block header to identify the memory pool
-    IndexFlag: NativeUInt;
-
-    // Thread Id that being used in this pool
-    ThreadIds: array[0..MaximumThreadPerPool - 1] of TThreadId;
+    // Index of this pool used with medium block header to identify the memory pool
+    Index: NativeUInt;  // High 8 bits
 
     // Number of threads being used in this pool
-    ThreadIdc: Byte;
+    UsedCount: NativeUInt;
+
+{$ifdef F4mTrackThreadLife}
+    // Thread Id that being used in this pool
+    ThreadIds: array[0..CMaximumThreadPerPool - 1] of TThreadId;
+{$endif}
   end;
 
 var
-  // Indicate shutdown is in process if not zero
-  Shutdown: Byte;
-
   // Memory thread pool and locked
   ThreadPoolsLocked: Byte;
-  ThreadPools: array[0..MaximumThreadPool - 1] of TThreadPool;
+  ThreadPools: array[0..CMaximumThreadPool - 1] of TThreadPool;
 
-{$ifdef F4mStatisticInfo}
-  StatisticCalls: TStatisticCalls;
+{$ifdef F4mCacheThreadOSAlloc}
+  MediumBlockPoolCachedsLocked: Byte;
+  MediumBlockPoolCacheds: PLinkNode;
+  MediumBlockPoolCachedsCount: Byte;
 {$endif}
+
+  // Indicate if shutdown is in process if not zero
+  Shutdown: Byte;
 
 implementation
 

@@ -88,20 +88,20 @@ var
 begin
   Assert(APool <> nil);
   Assert(Size > 0);
-  Assert(Size <= MaximumMediumBlockUserSize);
+  Assert(Size <= CMaximumMediumBlockUserSize);
 
   // Get the block size and bin number for this block size. Block sizes are
   // rounded up to the next bin size.
-  LBlockSize := ((Size + (MediumBlockGranularity - 1 + BlockHeaderSize - MediumBlockSizeOffset))
-    and -MediumBlockGranularity) + MediumBlockSizeOffset;
+  LBlockSize := ((Size + (CMediumBlockGranularity - 1 + CBlockHeaderSize - CMediumBlockSizeOffset))
+    and -CMediumBlockGranularity) + CMediumBlockSizeOffset;
 
   // Get the bin number
   //LBinNumber := (LBlockSize - MinimumMediumBlockSize) div MediumBlockGranularity;
-  LBinNumber := (LBlockSize - MinimumMediumBlockSize) shr MediumBlockGranularityShift;
+  LBinNumber := (LBlockSize - CMinimumMediumBlockSize) shr CMediumBlockGranularityShift;
 
   // Calculate the bin group
   //LBinGroupNumber := LBinNumber div MediumBlockBinGroupCount;
-  LBinGroupNumber := LBinNumber shr MediumBlockBinGroupCountShift;
+  LBinGroupNumber := LBinNumber shr CMediumBlockBinGroupCountShift;
 
   // Lock the medium blocks
   LockAcquire(@APool.MediumBlocksLocked);
@@ -112,7 +112,7 @@ begin
   begin
     // Get the actual bin number
     //LBinNumber := FindFirstSetBit(LBinGroupMasked) + (LBinGroupNumber * MediumBlockBinsPerGroup);
-    LBinNumber := FindFirstSetBit(LBinGroupMasked) + (LBinGroupNumber shl MediumBlockBinsPerGroupShift);
+    LBinNumber := FindFirstSetBit(LBinGroupMasked) + (LBinGroupNumber shl CMediumBlockBinsPerGroupShift);
   end
   else
   begin
@@ -125,7 +125,7 @@ begin
 
       // Get the bin in the group with free blocks
       //LBinNumber := FindFirstSetBit(APool.MediumBlockBinBitmaps[LBinGroupNumber]) + (LBinGroupNumber * MediumBlockBinsPerGroup);
-      LBinNumber := FindFirstSetBit(APool.MediumBlockBinBitmaps[LBinGroupNumber]) + (LBinGroupNumber shl MediumBlockBinsPerGroupShift);
+      LBinNumber := FindFirstSetBit(APool.MediumBlockBinBitmaps[LBinGroupNumber]) + (LBinGroupNumber shl CMediumBlockBinsPerGroupShift);
     end
     else
     begin
@@ -143,8 +143,8 @@ begin
         APool.MediumSequentialFeedBytesLeft := LSequentialFeedFreeSize - LBlockSize;
 
         // Set the Pool and flags for the block
-        PNativeUInt(NativeUInt(Result) - BlockHeaderSize)^ :=
-          APool.IndexFlag or LBlockSize or IsMediumBlockFlag;
+        PNativeUInt(NativeUInt(Result) - CBlockHeaderSize)^ :=
+          APool.Index or LBlockSize or CIsMediumBlockFlag;
       end
       else
       begin
@@ -162,7 +162,9 @@ begin
 {$endif}
 
       // Done
-      LockRelease(@APool.MediumBlocksLocked);
+      //LockRelease(@APool.MediumBlocksLocked);
+      APool.MediumBlocksLocked := 0;
+
       Exit;
     end;
   end;
@@ -180,7 +182,7 @@ begin
   RemoveMediumFreeBlock(APool, Result);
 
   // Get the block size
-  LAvailableBlockSize := PNativeUInt(NativeUInt(Result) - BlockHeaderSize)^ and ExtractMediumSizeMask;
+  LAvailableBlockSize := PNativeUInt(NativeUInt(Result) - CBlockHeaderSize)^ and CExtractMediumSizeMask;
 
   // Is it an exact fit or not?
   LSecondSplitSize := LAvailableBlockSize - LBlockSize;
@@ -190,30 +192,31 @@ begin
     LSecondSplit := PMediumFreeBlock(NativeUInt(Result) + LBlockSize);
 
     // Set the size of the second split
-    PNativeUInt(NativeUInt(LSecondSplit) - BlockHeaderSize)^ :=
-      APool.IndexFlag or LSecondSplitSize or IsMediumBlockFlag or IsFreeBlockFlag;
+    PNativeUInt(NativeUInt(LSecondSplit) - CBlockHeaderSize)^ :=
+      APool.Index or LSecondSplitSize or CIsMediumBlockFlag or CIsFreeBlockFlag;
 
     // Store the size of the second split
-    PNativeUInt(NativeUInt(LSecondSplit) + LSecondSplitSize - 2 * BlockHeaderSize)^ :=
-      APool.IndexFlag or LSecondSplitSize;
+    PNativeUInt(NativeUInt(LSecondSplit) + LSecondSplitSize - 2 * CBlockHeaderSize)^ :=
+      APool.Index or LSecondSplitSize;
 
     // Put the remainder in a bin if it is big enough
-    if LSecondSplitSize >= MinimumMediumBlockSize then
+    if LSecondSplitSize >= CMinimumMediumBlockSize then
       InsertMediumBlockIntoBin(APool, LSecondSplit, LSecondSplitSize);
   end
   else
   begin
     // Mark this block as used in the block following it
-    LNextMediumBlockSizeAndFlags := Pointer(NativeUInt(Result) + LBlockSize - BlockHeaderSize);
-    LNextMediumBlockSizeAndFlags^ := LNextMediumBlockSizeAndFlags^ and (not PreviousMediumBlockIsFreeFlag);
+    LNextMediumBlockSizeAndFlags := Pointer(NativeUInt(Result) + LBlockSize - CBlockHeaderSize);
+    LNextMediumBlockSizeAndFlags^ := LNextMediumBlockSizeAndFlags^ and (not CPreviousMediumBlockIsFreeFlag);
   end;
 
   // Set the size and flags for this block
-  PNativeUInt(NativeUInt(Result) - BlockHeaderSize)^ :=
-    APool.IndexFlag or LBlockSize or IsMediumBlockFlag;
+  PNativeUInt(NativeUInt(Result) - CBlockHeaderSize)^ :=
+    APool.Index or LBlockSize or CIsMediumBlockFlag;
 
   // Unlock the medium blocks
-  LockRelease(@APool.MediumBlocksLocked);
+  //LockRelease(@APool.MediumBlocksLocked);
+  APool.MediumBlocksLocked := 0;
 
 {$ifdef F4mDebugManager}
   WriteGetMemMedium(APool, Result, LBinGroupMasked, LBinNumber, LBlockSize, Size);
@@ -237,8 +240,8 @@ begin
 {$endif}
 
   // Get the small block header: Is it actually a small block?
-  LBlockHeaderFlags := PNativeUInt(NativeUInt(P) - BlockHeaderSize)^;
-  Pool := @ThreadPools[LBlockHeaderFlags shr MediumSlotIndexShift];
+  LBlockHeaderFlags := PNativeUInt(NativeUInt(P) - CBlockHeaderSize)^;
+  Pool := @ThreadPools[LBlockHeaderFlags shr CMediumSlotIndexShift];
   Assert(Pool <> nil);
 
 {$ifdef F4mTestThreadPool}
@@ -246,7 +249,7 @@ begin
 {$endif}
 
   // Get the medium block size
-  LBlockSize := LBlockHeaderFlags and ExtractMediumSizeMask;
+  LBlockSize := LBlockHeaderFlags and CExtractMediumSizeMask;
 
 {$ifdef F4mDebugManager}
   if not UnmarkMemoryUsed(Pool, P) then
@@ -258,29 +261,29 @@ begin
 
   // Can we combine this block with the next free block?
   LNextMediumBlock := PMediumFreeBlock(NativeUInt(P) + LBlockSize);
-  LNextMediumBlockSizeAndFlags := PNativeUInt(NativeUInt(LNextMediumBlock) - BlockHeaderSize)^;
-  if (LNextMediumBlockSizeAndFlags and IsFreeBlockFlag) <> 0 then
+  LNextMediumBlockSizeAndFlags := PNativeUInt(NativeUInt(LNextMediumBlock) - CBlockHeaderSize)^;
+  if (LNextMediumBlockSizeAndFlags and CIsFreeBlockFlag) <> 0 then
   begin
     // Increase the size of this block
-    Inc(LBlockSize, LNextMediumBlockSizeAndFlags and ExtractMediumSizeMask);
+    Inc(LBlockSize, LNextMediumBlockSizeAndFlags and CExtractMediumSizeMask);
 
     // Remove the next block as well
-    if (LNextMediumBlockSizeAndFlags and ExtractMediumSizeMask) >= MinimumMediumBlockSize then
+    if (LNextMediumBlockSizeAndFlags and CExtractMediumSizeMask) >= CMinimumMediumBlockSize then
       RemoveMediumFreeBlock(Pool, LNextMediumBlock);
   end
   else
   begin
     // Reset the "previous in use" flag of the next block
-    PNativeUInt(NativeUInt(LNextMediumBlock) - BlockHeaderSize)^ :=
-      LNextMediumBlockSizeAndFlags or PreviousMediumBlockIsFreeFlag;
+    PNativeUInt(NativeUInt(LNextMediumBlock) - CBlockHeaderSize)^ :=
+      LNextMediumBlockSizeAndFlags or CPreviousMediumBlockIsFreeFlag;
   end;
 
   // Can we combine this block with the previous free block? We need to
   // re-read the flags since it could have changed before we could lock the medium blocks.
-  if (PNativeUInt(NativeUInt(P) - BlockHeaderSize)^ and PreviousMediumBlockIsFreeFlag) <> 0 then
+  if (PNativeUInt(NativeUInt(P) - CBlockHeaderSize)^ and CPreviousMediumBlockIsFreeFlag) <> 0 then
   begin
     // Get the size of the free block just before this one
-    LPreviousMediumBlockSize := PNativeUInt(NativeUInt(P) - 2 * BlockHeaderSize)^ and ExtractMediumSizeMask;
+    LPreviousMediumBlockSize := PNativeUInt(NativeUInt(P) - 2 * CBlockHeaderSize)^ and CExtractMediumSizeMask;
 
     // Get the start of the previous block
     LPreviousMediumBlock := PMediumFreeBlock(NativeUInt(P) - LPreviousMediumBlockSize);
@@ -292,21 +295,21 @@ begin
     P := LPreviousMediumBlock;
 
     // Remove the previous block from the linked list
-    if LPreviousMediumBlockSize >= MinimumMediumBlockSize then
+    if LPreviousMediumBlockSize >= CMinimumMediumBlockSize then
       RemoveMediumFreeBlock(Pool, LPreviousMediumBlock);
   end;
 
   // Is the entire medium block pool free, and there are other free blocks
   // that can fit the largest possible medium block? -> free it.
-  if LBlockSize <> (MediumBlockPoolSize - MediumBlockPoolHeaderSize) then
+  if LBlockSize <> (CMediumBlockPoolSize - CMediumBlockPoolHeaderSize) then
   begin
     // Store the size of the block as well as the flags
-    PNativeUInt(NativeUInt(P) - BlockHeaderSize)^ :=
-      Pool.IndexFlag or LBlockSize or IsMediumBlockFlag or IsFreeBlockFlag;
+    PNativeUInt(NativeUInt(P) - CBlockHeaderSize)^ :=
+      Pool.Index or LBlockSize or CIsMediumBlockFlag or CIsFreeBlockFlag;
 
     // Store the trailing size marker
-    PNativeUInt(NativeUInt(P) + LBlockSize - 2 * BlockHeaderSize)^ :=
-      Pool.IndexFlag or LBlockSize;
+    PNativeUInt(NativeUInt(P) + LBlockSize - 2 * CBlockHeaderSize)^ :=
+      Pool.Index or LBlockSize;
 
     // Insert this block back into the bins: Size check not required here,
     // since medium blocks that are in use are not allowed to be
@@ -314,48 +317,52 @@ begin
     InsertMediumBlockIntoBin(Pool, P, LBlockSize);
 
     // Unlock medium blocks
-    LockRelease(@Pool.MediumBlocksLocked);
+    //LockRelease(@Pool.MediumBlocksLocked);
+    Pool.MediumBlocksLocked := 0;
 
     // All OK
-    Result := ResultOK;
+    Result := CResultOK;
   end
   else
   begin
     // Should this become the new sequential feed?
-    if Pool.MediumSequentialFeedBytesLeft <> (MediumBlockPoolSize - MediumBlockPoolHeaderSize) then
+    if Pool.MediumSequentialFeedBytesLeft <> (CMediumBlockPoolSize - CMediumBlockPoolHeaderSize) then
     begin
       // Bin the current sequential feed
-      BinMediumSequentialFeedRemainder(Pool);
+      if Pool.MediumSequentialFeedBytesLeft <> 0 then
+        BinMediumSequentialFeedRemainder(Pool);
 
       // Set this medium pool up as the new sequential feed pool:
       // Store the sequential feed pool trailer
-      PNativeUInt(NativeUInt(P) + LBlockSize - BlockHeaderSize)^ := IsMediumBlockFlag;
+      PNativeUInt(NativeUInt(P) + LBlockSize - CBlockHeaderSize)^ := CIsMediumBlockFlag;
 
       // Store the number of bytes available in the sequential feed chunk
-      Pool.MediumSequentialFeedBytesLeft := MediumBlockPoolSize - MediumBlockPoolHeaderSize;
+      Pool.MediumSequentialFeedBytesLeft := CMediumBlockPoolSize - CMediumBlockPoolHeaderSize;
 
       // Set the last sequentially fed block
       Pool.LastSequentiallyFedMediumBlock := Pointer(NativeUInt(P) + LBlockSize);
 
       // Unlock medium blocks
-      LockRelease(@Pool.MediumBlocksLocked);
+      //LockRelease(@Pool.MediumBlocksLocked);
+      Pool.MediumBlocksLocked := 0;
 
       // Success
-      Result := ResultOK;
+      Result := CResultOK;
     end
     else
     begin
       // Remove this medium block pool from the linked list
-      Dec(NativeUInt(P), MediumBlockPoolHeaderSize);
+      Dec(NativeUInt(P), CMediumBlockPoolHeaderSize);
       LPPreviousMediumBlockPoolHeader := PMediumBlockPoolHeader(P).PreviousMediumBlockPoolHeader;
       LPNextMediumBlockPoolHeader := PMediumBlockPoolHeader(P).NextMediumBlockPoolHeader;
       LPPreviousMediumBlockPoolHeader.NextMediumBlockPoolHeader := LPNextMediumBlockPoolHeader;
       LPNextMediumBlockPoolHeader.PreviousMediumBlockPoolHeader := LPPreviousMediumBlockPoolHeader;
 
-      // Unlock medium blocks
-      LockRelease(@Pool.MediumBlocksLocked);
-
       Result := FreeMediumBlockPool(Pool, P);
+
+      // Unlock medium blocks
+      //LockRelease(@Pool.MediumBlocksLocked);
+      Pool.MediumBlocksLocked := 0;
     end;
   end;
 end;
@@ -377,7 +384,7 @@ var
   procedure MediumBlockInPlaceUpsize;
   begin
     // Remove the next block
-    if (LNextBlockSizeAndFlags and ExtractMediumSizeMask) >= MinimumMediumBlockSize then
+    if (LNextBlockSizeAndFlags and CExtractMediumSizeMask) >= CMinimumMediumBlockSize then
       RemoveMediumFreeBlock(Pool, LPNextBlock);
 
     LNewAllocSize := Size;
@@ -389,21 +396,21 @@ var
 {$endif}
 
     // Round up to the nearest block size granularity
-    LNewBlockSize := ((LNewAllocSize + (BlockHeaderSize + MediumBlockGranularity - 1 - MediumBlockSizeOffset))
-      and -MediumBlockGranularity) + MediumBlockSizeOffset;
+    LNewBlockSize := ((LNewAllocSize + (CBlockHeaderSize + CMediumBlockGranularity - 1 - CMediumBlockSizeOffset))
+      and -CMediumBlockGranularity) + CMediumBlockSizeOffset;
 
     // Calculate the size of the second split
-    LSecondSplitSize := LNewAvailableSize + BlockHeaderSize - LNewBlockSize;
+    LSecondSplitSize := LNewAvailableSize + CBlockHeaderSize - LNewBlockSize;
 
     // Does it fit?
     if Int32(LSecondSplitSize) <= 0 then
     begin
       // The block size is the full available size plus header
-      LNewBlockSize := LNewAvailableSize + BlockHeaderSize;
+      LNewBlockSize := LNewAvailableSize + CBlockHeaderSize;
 
       // Grab the whole block: Mark it as used in the block following it
       LPNextBlockHeader := Pointer(NativeUInt(P) + LNewAvailableSize);
-      PNativeUInt(LPNextBlockHeader)^ := PNativeUInt(LPNextBlockHeader)^ and (not PreviousMediumBlockIsFreeFlag);
+      PNativeUInt(LPNextBlockHeader)^ := PNativeUInt(LPNextBlockHeader)^ and (not CPreviousMediumBlockIsFreeFlag);
     end
     else
     begin
@@ -411,56 +418,56 @@ var
       LPNextBlock := PMediumFreeBlock(NativeUInt(P) + LNewBlockSize);
 
       // Set the size of the second split
-      PNativeUInt(NativeUInt(LPNextBlock) - BlockHeaderSize)^ :=
-        Pool.IndexFlag or LSecondSplitSize or IsMediumBlockFlag or IsFreeBlockFlag;
+      PNativeUInt(NativeUInt(LPNextBlock) - CBlockHeaderSize)^ :=
+        Pool.Index or LSecondSplitSize or CIsMediumBlockFlag or CIsFreeBlockFlag;
 
       // Store the size of the second split before the header of the next block
-      PNativeUInt(NativeUInt(LPNextBlock) + LSecondSplitSize - 2 * BlockHeaderSize)^ :=
-        Pool.IndexFlag or LSecondSplitSize;
+      PNativeUInt(NativeUInt(LPNextBlock) + LSecondSplitSize - 2 * CBlockHeaderSize)^ :=
+        Pool.Index or LSecondSplitSize;
 
       // Put the remainder in a bin if it is big enough
-      if LSecondSplitSize >= MinimumMediumBlockSize then
+      if LSecondSplitSize >= CMinimumMediumBlockSize then
         InsertMediumBlockIntoBin(Pool, LPNextBlock, LSecondSplitSize);
     end;
 
     // Set the size and flags for this block
-    PNativeUInt(NativeUInt(P) - BlockHeaderSize)^ :=
-      Pool.IndexFlag or LNewBlockSize or LBlockFlags;
+    PNativeUInt(NativeUInt(P) - CBlockHeaderSize)^ :=
+      Pool.Index or LNewBlockSize or LBlockFlags;
   end;
 
   // In-place downsize of a medium block. On entry Size must be less than half of LOldAvailableSize.
   procedure MediumBlockInPlaceDownsize;
   begin
     // Round up to the next medium block size
-    LNewBlockSize := ((Size + (BlockHeaderSize + MediumBlockGranularity - 1 - MediumBlockSizeOffset))
-      and -MediumBlockGranularity) + MediumBlockSizeOffset;
+    LNewBlockSize := ((Size + (CBlockHeaderSize + CMediumBlockGranularity - 1 - CMediumBlockSizeOffset))
+      and -CMediumBlockGranularity) + CMediumBlockSizeOffset;
 
     // Get the size of the second split
-    LSecondSplitSize := (LOldAvailableSize + BlockHeaderSize) - LNewBlockSize;
+    LSecondSplitSize := (LOldAvailableSize + CBlockHeaderSize) - LNewBlockSize;
 
     // Lock the medium blocks
     LockAcquire(@Pool.MediumBlocksLocked);
 
     // Set the new size
-    PNativeUInt(NativeUInt(P) - BlockHeaderSize)^ :=
-      (PNativeUInt(NativeUInt(P) - BlockHeaderSize)^ and ExtractMediumAndLargeFlagsMask)
-      or Pool.IndexFlag or LNewBlockSize;
+    PNativeUInt(NativeUInt(P) - CBlockHeaderSize)^ :=
+      (PNativeUInt(NativeUInt(P) - CBlockHeaderSize)^ and CExtractMediumAndLargeFlagsMask)
+      or Pool.Index or LNewBlockSize;
 
     // Is the next block in use?
-    LPNextBlock := PNativeUInt(NativeUInt(P) + LOldAvailableSize + BlockHeaderSize);
-    LNextBlockSizeAndFlags := PNativeUInt(NativeUInt(LPNextBlock) - BlockHeaderSize)^;
-    if (LNextBlockSizeAndFlags and IsFreeBlockFlag) = 0 then
+    LPNextBlock := PNativeUInt(NativeUInt(P) + LOldAvailableSize + CBlockHeaderSize);
+    LNextBlockSizeAndFlags := PNativeUInt(NativeUInt(LPNextBlock) - CBlockHeaderSize)^;
+    if (LNextBlockSizeAndFlags and CIsFreeBlockFlag) = 0 then
     begin
       // The next block is in use: flag its previous block as free
-      PNativeUInt(NativeUInt(LPNextBlock) - BlockHeaderSize)^ :=
-        LNextBlockSizeAndFlags or PreviousMediumBlockIsFreeFlag;
+      PNativeUInt(NativeUInt(LPNextBlock) - CBlockHeaderSize)^ :=
+        LNextBlockSizeAndFlags or CPreviousMediumBlockIsFreeFlag;
     end
     else
     begin
       // The next block is free: combine it
-      LNextBlockSize := LNextBlockSizeAndFlags and ExtractMediumSizeMask;
+      LNextBlockSize := LNextBlockSizeAndFlags and CExtractMediumSizeMask;
       Inc(LSecondSplitSize, LNextBlockSize);
-      if LNextBlockSize >= MinimumMediumBlockSize then
+      if LNextBlockSize >= CMinimumMediumBlockSize then
         RemoveMediumFreeBlock(Pool, LPNextBlock);
     end;
 
@@ -468,26 +475,27 @@ var
     LPNextBlock := PNativeUInt(NativeUInt(P) + LNewBlockSize);
 
     // Store the free part's header
-    PNativeUInt(NativeUInt(LPNextBlock) - BlockHeaderSize)^ :=
-      Pool.IndexFlag or LSecondSplitSize or IsMediumBlockFlag or IsFreeBlockFlag;
+    PNativeUInt(NativeUInt(LPNextBlock) - CBlockHeaderSize)^ :=
+      Pool.Index or LSecondSplitSize or CIsMediumBlockFlag or CIsFreeBlockFlag;
 
     // Store the trailing size field
-    PNativeUInt(NativeUInt(LPNextBlock) + LSecondSplitSize - 2 * BlockHeaderSize)^ :=
-      Pool.IndexFlag or LSecondSplitSize;
+    PNativeUInt(NativeUInt(LPNextBlock) + LSecondSplitSize - 2 * CBlockHeaderSize)^ :=
+      Pool.Index or LSecondSplitSize;
 
     // Bin this free block
-    if LSecondSplitSize >= MinimumMediumBlockSize then
+    if LSecondSplitSize >= CMinimumMediumBlockSize then
       InsertMediumBlockIntoBin(Pool, LPNextBlock, LSecondSplitSize);
 
     // Unlock the medium blocks
-    LockRelease(@Pool.MediumBlocksLocked);
+    //LockRelease(@Pool.MediumBlocksLocked);
+    Pool.MediumBlocksLocked := 0;
   end;
 
 begin
   Assert(P <> nil);
 
-  LBlockSizeAndFlags := PNativeUInt(NativeUInt(P) - BlockHeaderSize)^;
-  Pool := @ThreadPools[LBlockSizeAndFlags shr MediumSlotIndexShift];
+  LBlockSizeAndFlags := PNativeUInt(NativeUInt(P) - CBlockHeaderSize)^;
+  Pool := @ThreadPools[LBlockSizeAndFlags shr CMediumSlotIndexShift];
   Assert(Pool <> nil);
 
 {$ifdef F4mTestThreadPool}
@@ -495,7 +503,7 @@ begin
 {$endif}
 
   // What is the available size in the block being reallocated?
-  LOldAvailableSize := LBlockSizeAndFlags and ExtractMediumSizeMask;
+  LOldAvailableSize := LBlockSizeAndFlags and CExtractMediumSizeMask;
 
 {$ifdef F4mDebugManager}
   if not IsMemoryUsed(Pool, P) then
@@ -506,18 +514,18 @@ begin
   LPNextBlock := PNativeUInt(NativeUInt(P) + LOldAvailableSize);
 
   // Subtract the block header size from the old available size
-  Dec(LOldAvailableSize, BlockHeaderSize);
+  Dec(LOldAvailableSize, CBlockHeaderSize);
 
   // Is it an upsize?
   if Size > LOldAvailableSize then
   begin
     // Can we do an in-place upsize?
-    LNextBlockSizeAndFlags := PNativeUInt(NativeUInt(LPNextBlock) - BlockHeaderSize)^;
+    LNextBlockSizeAndFlags := PNativeUInt(NativeUInt(LPNextBlock) - CBlockHeaderSize)^;
 
     // Is the next block free?
-    if (LNextBlockSizeAndFlags and IsFreeBlockFlag) <> 0 then
+    if (LNextBlockSizeAndFlags and CIsFreeBlockFlag) <> 0 then
     begin
-      LNextBlockSize := LNextBlockSizeAndFlags and ExtractMediumSizeMask;
+      LNextBlockSize := LNextBlockSizeAndFlags and CExtractMediumSizeMask;
 
       // The available size including the next block
       LNewAvailableSize := LOldAvailableSize + LNextBlockSize;
@@ -531,38 +539,40 @@ begin
         LockAcquire(@Pool.MediumBlocksLocked);
 
         // Re-read the info for this block
-        LBlockFlags := PNativeUInt(NativeUInt(P) - BlockHeaderSize)^ and ExtractMediumAndLargeFlagsMask;
+        LBlockFlags := PNativeUInt(NativeUInt(P) - CBlockHeaderSize)^ and CExtractMediumAndLargeFlagsMask;
 
         // Re-read the info for the next block
-        LNextBlockSizeAndFlags := PNativeUInt(NativeUInt(LPNextBlock) - BlockHeaderSize)^;
+        LNextBlockSizeAndFlags := PNativeUInt(NativeUInt(LPNextBlock) - CBlockHeaderSize)^;
 
         // Recalculate the next block size
-        LNextBlockSize := LNextBlockSizeAndFlags and ExtractMediumSizeMask;
+        LNextBlockSize := LNextBlockSizeAndFlags and CExtractMediumSizeMask;
 
         // The available size including the next block
         LNewAvailableSize := LOldAvailableSize + LNextBlockSize;
 
         // Is the next block still free and the size still sufficient?
-        if ((LNextBlockSizeAndFlags and IsFreeBlockFlag) <> 0) and (Size <= LNewAvailableSize) then
+        if ((LNextBlockSizeAndFlags and CIsFreeBlockFlag) <> 0) and (Size <= LNewAvailableSize) then
         begin
           // Upsize the block in-place
           MediumBlockInPlaceUpsize;
 
           // Unlock the medium blocks
-          LockRelease(@Pool.MediumBlocksLocked);
+          //LockRelease(@Pool.MediumBlocksLocked);
+          Pool.MediumBlocksLocked := 0;
 
           // Return the result
           Result := P;
 
           Assert(Result <> nil);
-          Assert((PNativeUInt(NativeUInt(Result) - BlockHeaderSize)^ and IsFreeBlockFlag) = 0);
+          Assert((PNativeUInt(NativeUInt(Result) - CBlockHeaderSize)^ and CIsFreeBlockFlag) = 0);
 
           // Done
           Exit;
         end;
 
         // Couldn't use the block: Unlock the medium blocks
-        LockRelease(@Pool.MediumBlocksLocked);
+        //LockRelease(@Pool.MediumBlocksLocked);
+        Pool.MediumBlocksLocked := 0;
       end;
     end;
 
@@ -577,7 +587,7 @@ begin
       LNewAllocSize := LMinimumUpsize;
 {$else}
     // Need round up for the special move
-    LNewAllocSize := (Size + (MinimumBlockAlignment - 1)) and -MinimumBlockAlignment;
+    LNewAllocSize := (Size + (CMinimumBlockAlignment - 1)) and -CMinimumBlockAlignment;
 {$endif}
 
     // Allocate the new block
@@ -587,7 +597,7 @@ begin
     if Result <> nil then
     begin
       Assert(Result <> P);
-      Assert((PNativeUInt(NativeUInt(Result) - BlockHeaderSize)^ and IsFreeBlockFlag) = 0);
+      Assert((PNativeUInt(NativeUInt(Result) - CBlockHeaderSize)^ and CIsFreeBlockFlag) = 0);
 
       // Move the data across
 {$ifdef F4mUseCustomVariableSizeMoveRoutines}
@@ -612,13 +622,13 @@ begin
     // In-place downsize? Balance the cost of moving the data vs. the cost of
     // fragmenting the memory pool. Medium blocks in use may never be smaller
     // than MinimumMediumBlockSize.
-    if Size >= (MinimumMediumBlockSize - BlockHeaderSize) then
+    if Size >= (CMinimumMediumBlockSize - CBlockHeaderSize) then
     begin
       MediumBlockInPlaceDownsize;
       Result := P;
 
       Assert(Result <> nil);
-      Assert((PNativeUInt(NativeUInt(Result) - BlockHeaderSize)^ and IsFreeBlockFlag) = 0);
+      Assert((PNativeUInt(NativeUInt(Result) - CBlockHeaderSize)^ and CIsFreeBlockFlag) = 0);
 
       Exit;
     end;
@@ -628,12 +638,12 @@ begin
     // quarter of the minimum medium block size), move the data to a small
     // block, otherwise shrink the medium block to the minimum allowable
     // medium block size.
-    if Size >= MediumInPlaceDownsizeLimit then
+    if Size >= CMediumInPlaceDownsizeLimit then
     begin
       // The request is for a size smaller than the minimum medium block
       // size, but not small enough to justify moving data: Reduce the
       // block size to the minimum medium block size
-      Size := MinimumMediumBlockSize - BlockHeaderSize;
+      Size := CMinimumMediumBlockSize - CBlockHeaderSize;
 
       // Is it already at the minimum medium block size?
       if LOldAvailableSize > Size then
@@ -642,13 +652,13 @@ begin
       Result := P;
 
       Assert(Result <> nil);
-      Assert((PNativeUInt(NativeUInt(Result) - BlockHeaderSize)^ and IsFreeBlockFlag) = 0);
+      Assert((PNativeUInt(NativeUInt(Result) - CBlockHeaderSize)^ and CIsFreeBlockFlag) = 0);
 
       Exit;
     end;
 
     // Need round up for the special move
-    LNewAllocSize := (Size + (MinimumBlockAlignment - 1)) and -MinimumBlockAlignment;
+    LNewAllocSize := (Size + (CMinimumBlockAlignment - 1)) and -CMinimumBlockAlignment;
 
     // Allocate the new block
     Result := FGetMemPool(Pool, LNewAllocSize);
@@ -657,7 +667,7 @@ begin
     if Result <> nil then
     begin
       Assert(Result <> P);
-      Assert((PNativeUInt(NativeUInt(Result) - BlockHeaderSize)^ and IsFreeBlockFlag) = 0);
+      Assert((PNativeUInt(NativeUInt(Result) - CBlockHeaderSize)^ and CIsFreeBlockFlag) = 0);
 
       // Move the data across
 {$ifdef F4mUseCustomVariableSizeMoveRoutines}
@@ -677,21 +687,39 @@ begin
   end;
 end;
 
+procedure InitializeMemoryMediumPool(const APool: PThreadPool);
+var
+  LPMediumFreeBlock: PMediumFreeBlock;
+  J: Int32;
+begin
+  // There are currently no medium block pools
+  APool.MediumBlockPoolsCircularList.PreviousMediumBlockPoolHeader := @APool.MediumBlockPoolsCircularList;
+  APool.MediumBlockPoolsCircularList.NextMediumBlockPoolHeader := @APool.MediumBlockPoolsCircularList;
+
+  // All medium bins are empty
+  for J := 0 to High(APool.MediumBlockBins) do
+  begin
+    LPMediumFreeBlock := @APool.MediumBlockBins[J];
+    LPMediumFreeBlock.PreviousFreeBlock := LPMediumFreeBlock;
+    LPMediumFreeBlock.NextFreeBlock := LPMediumFreeBlock;
+  end;
+
+  FillChar(APool.MediumBlockBinBitmaps, SizeOf(APool.MediumBlockBinBitmaps), 0);
+  APool.MediumBlockBinGroupBitmap := 0;
+  APool.MediumSequentialFeedBytesLeft := 0;
+
+{$ifdef F4mCacheThreadOSAlloc}
+  APool.MediumBlockPoolCacheds := nil;
+  APool.MediumBlockPoolCachedsCount := 0;
+{$endif}
+end;
+
 procedure FreeAllMemoryMedium;
-  procedure FreeAllMemoryMediumPool(APool: PThreadPool);
+  procedure FreeAllMemoryMediumPool(const APool: PThreadPool);
   var
     LPMediumBlockPoolHeader, LPNextMediumBlockPoolHeader: PMediumBlockPoolHeader;
-    LPMediumFreeBlock: PMediumFreeBlock;
-    J: Int32;
+    MediumBlockPoolCachedsFree: PLinkNode;
   begin
-{$ifdef F4mCacheThreadOSAlloc}
-    if APool.MediumCachedOSAlloc <> nil then
-    begin
-      OSFree(APool.MediumCachedOSAlloc);
-      APool.MediumCachedOSAlloc := nil;
-    end;
-{$endif}    
-
     // Free all block pools
     LPMediumBlockPoolHeader := APool.MediumBlockPoolsCircularList.NextMediumBlockPoolHeader;
     while LPMediumBlockPoolHeader <> @APool.MediumBlockPoolsCircularList do
@@ -706,46 +734,36 @@ procedure FreeAllMemoryMedium;
       LPMediumBlockPoolHeader := LPNextMediumBlockPoolHeader;
     end;
 
-    // Clear all medium block pools
-    APool.MediumBlockPoolsCircularList.PreviousMediumBlockPoolHeader := @APool.MediumBlockPoolsCircularList;
-    APool.MediumBlockPoolsCircularList.NextMediumBlockPoolHeader := @APool.MediumBlockPoolsCircularList;
-
-    // All medium bins are empty
-    for J := 0 to High(APool.MediumBlockBins) do
+{$ifdef F4mCacheThreadOSAlloc}
+    while APool.MediumBlockPoolCacheds <> nil do
     begin
-      LPMediumFreeBlock := @APool.MediumBlockBins[J];
-      LPMediumFreeBlock.PreviousFreeBlock := LPMediumFreeBlock;
-      LPMediumFreeBlock.NextFreeBlock := LPMediumFreeBlock;
+      MediumBlockPoolCachedsFree := APool.MediumBlockPoolCacheds;
+      APool.MediumBlockPoolCacheds := MediumBlockPoolCachedsFree.Next;
+      OSFree(MediumBlockPoolCachedsFree);
     end;
-    FillChar(APool.MediumBlockBinBitmaps, SizeOf(APool.MediumBlockBinBitmaps), 0);
-    APool.MediumBlockBinGroupBitmap := 0;
-    APool.MediumSequentialFeedBytesLeft := 0;
+{$endif}
+
+    InitializeMemoryMediumPool(APool);
   end;
 var
+  MediumBlockPoolCachedsFree: PLinkNode;
   I: Int32;
 begin
   for I := 0 to High(ThreadPools) do
     FreeAllMemoryMediumPool(@ThreadPools[I]);
+
+{$ifdef F4mCacheThreadOSAlloc}
+  while MediumBlockPoolCacheds <> nil do
+  begin
+    MediumBlockPoolCachedsFree := MediumBlockPoolCacheds;
+    MediumBlockPoolCacheds := MediumBlockPoolCachedsFree.Next;
+    OSFree(MediumBlockPoolCachedsFree);
+  end;
+  MediumBlockPoolCachedsCount := 0;
+{$endif}
 end;
 
 procedure InitializeMemoryMedium;
-  procedure InitializeMemoryMediumPool(APool: PThreadPool);
-  var
-    LPMediumFreeBlock: PMediumFreeBlock;
-    J: Int32;
-  begin
-    // There are currently no medium block pools
-    APool.MediumBlockPoolsCircularList.PreviousMediumBlockPoolHeader := @APool.MediumBlockPoolsCircularList;
-    APool.MediumBlockPoolsCircularList.NextMediumBlockPoolHeader := @APool.MediumBlockPoolsCircularList;
-
-    // All medium bins are empty
-    for J := 0 to High(APool.MediumBlockBins) do
-    begin
-      LPMediumFreeBlock := @APool.MediumBlockBins[J];
-      LPMediumFreeBlock.PreviousFreeBlock := LPMediumFreeBlock;
-      LPMediumFreeBlock.NextFreeBlock := LPMediumFreeBlock;
-    end;
-  end;
 var
   I: Int32;
 begin
@@ -757,3 +775,4 @@ initialization
   InitializeMemoryMedium;
 
 end.
+

@@ -160,23 +160,24 @@ const
     (BlockSize: 2384),
 
     // 224 byte jumps
-    (BlockSize: MaximumSmallBlockSize),
+    (BlockSize: CMaximumSmallBlockSize),
 
     // The last block size occurs three times. If, during a GetMem call, the
     // requested block size is already locked by another thread then up to two
     // larger block sizes may be used instead. Having the last block size occur
     // three times avoids the need to have a size overflow check.
-    (BlockSize: MaximumSmallBlockSize),
-    (BlockSize: MaximumSmallBlockSize)
+    (BlockSize: CMaximumSmallBlockSize),
+    (BlockSize: CMaximumSmallBlockSize)
   );
 
 {----------------------Main Memory Manager Functions----------------------}
 
 function FGetMem(Size: NativeInt): Pointer;
-function FGetMemPool(APool: PThreadPool; ASize: NativeUInt): Pointer;
 function FFreeMem(P: Pointer): Integer;
 function FReallocMem(P: Pointer; Size: NativeInt): Pointer;
 function FAllocMem(Size: NativeInt): Pointer;
+
+function FGetMemPool(const APool: PThreadPool; const ASize: NativeUInt): Pointer;
 
 function FRegisterExpectedMemoryLeak(P: Pointer): Boolean;
 function FUnregisterExpectedMemoryLeak(P: Pointer): Boolean;
@@ -184,42 +185,49 @@ procedure FScanForMemoryLeaks;
 
 procedure FFinalizeMemoryManager;
 
+function FGetOSAllocCachedCount: UInt32;
+
 
 {-------------------------Medium Block Management-------------------------}
 
 // Allocates a new sequential feed medium block pool and immediately splits off a
 // block of the requested size. The block size must be a multiple of 16.
 // Medium blocks must be locked.
-function AllocNewSequentialFeedMediumPool(APool: PThreadPool; AFirstBlockSize: UInt32): Pointer;
+function AllocNewSequentialFeedMediumPool(const APool: PThreadPool; const AFirstBlockSize: UInt32): Pointer;
 
 // Bins what remains in the current sequential feed medium block pool.
 // Medium blocks must be locked.
-procedure BinMediumSequentialFeedRemainder(APool: PThreadPool);
+// APool.MediumSequentialFeedBytesLeft must not be zero
+procedure BinMediumSequentialFeedRemainder(const APool: PThreadPool);
 
 // Frees a medium block pool
-function FreeMediumBlockPool(APool: PThreadPool; AMediumBlockPool: Pointer): Integer;
+// Medium blocks must be locked.
+function FreeMediumBlockPool(const APool: PThreadPool; AMediumBlockPool: PLinkNode): Integer;
 
 // Gets the first and last block pointer for a small block pool
-procedure GetFirstAndLastSmallBlockInPool(APSmallBlockPool: PSmallBlockPoolHeader; var AFirstPtr, ALastPtr: Pointer);
+procedure GetFirstAndLastSmallBlockInPool(const APSmallBlockPool: PSmallBlockPoolHeader;
+  out FirstPtr, LastPtr: Pointer);
 
 // Gets the first medium block in the medium block pool
-function GetFirstMediumBlockInPool(APool: PThreadPool; APMediumBlockPoolHeader: PMediumBlockPoolHeader): Pointer;
+// Medium blocks must be locked.
+function GetFirstMediumBlockInPool(const APool: PThreadPool; const APMediumBlockPoolHeader: PMediumBlockPoolHeader): Pointer;
 
 // Inserts a medium block into the appropriate medium block bin.
 // Medium blocks must be locked.
-procedure InsertMediumBlockIntoBin(APool: PThreadPool; APMediumFreeBlock: PMediumFreeBlock; AMediumBlockSize: UInt32);
+procedure InsertMediumBlockIntoBin(const APool: PThreadPool; const APMediumFreeBlock: PMediumFreeBlock;
+  const AMediumBlockSize: UInt32);
 
 // Memory manager has been allocated/used
 function IsMemoryAllocated: Boolean;
 
 // Advances to the next medium block. Returns nil if the end of the medium block pool
 // has been reached
-function NextMediumBlock(APMediumBlock: Pointer): Pointer;
+function NextMediumBlock(const APMediumBlock: Pointer): Pointer;
 
 // Removes a medium block from the circular linked list of free blocks.
 // Does not change any header flags.
 // Medium blocks must be locked.
-procedure RemoveMediumFreeBlock(APool: PThreadPool; APMediumFreeBlock: PMediumFreeBlock);
+procedure RemoveMediumFreeBlock(const APool: PThreadPool; const APMediumFreeBlock: PMediumFreeBlock);
 
 
 const
@@ -239,6 +247,9 @@ implementation
 
 uses
   FMemoryThreadPool, FVirtual, FMemoryLarge, FMemoryMedium, FMemorySmall
+{$ifdef F4mShareMemoryManager}
+  , FShare
+{$endif}
 {$ifdef F4mDebugManager}
   , FDebug
 {$endif}
@@ -246,6 +257,13 @@ uses
   , FTrackLeak
 {$endif}
   ;
+
+{$ifdef F4mInstallMemoryManager}
+var
+  OldMemoryManager: TMemoryManagerEx;
+  SharedMemory, UseSharedMemory: TSharedMemory:
+  IsMemoryFManagerSet: Boolean;
+{$endif}
 
 {----------------------Main Memory Manager Functions----------------------}
 
@@ -257,17 +275,17 @@ begin
     Result := nil;
 end;
 
-function FGetMemPool(APool: PThreadPool; ASize: NativeUInt): Pointer;
+function FGetMemPool(const APool: PThreadPool; const ASize: NativeUInt): Pointer;
 begin
   Assert(APool <> nil);
   Assert(ASize > 0);
 
   // Take the header size into account when determining the required block size
   // Is it a small block?
-  if ASize <= MaximumSmallBlockUserSize then
+  if ASize <= CMaximumSmallBlockUserSize then
     Result := GetMemSmall(APool, ASize)
   // Is it a medium block?
-  else if ASize <= MaximumMediumBlockUserSize then
+  else if ASize <= CMaximumMediumBlockUserSize then
     Result := GetMemMedium(APool, ASize)
   // Allocate a large block
   else
@@ -284,33 +302,33 @@ begin
 
   if P <> nil then
   begin
-    // Get the small block header: Is it actually a small block?
-    LBlockSizeAndFlags := PNativeUInt(NativeUInt(P) - BlockHeaderSize)^;
+    // Get the block header
+    LBlockSizeAndFlags := PNativeUInt(NativeUInt(P) - CBlockHeaderSize)^;
 
     // Is it a valid small block?
-    if (LBlockSizeAndFlags and (IsFreeBlockFlag or IsMediumBlockFlag or IsLargeBlockFlag)) = 0 then
+    if (LBlockSizeAndFlags and (CIsFreeBlockFlag or CIsMediumBlockFlag or CIsLargeBlockFlag)) = 0 then
       Result := FreeMemSmall(P)
     // Is this a valid medium block?
-    else if (LBlockSizeAndFlags and (IsFreeBlockFlag or IsLargeBlockFlag)) = 0 then
+    else if (LBlockSizeAndFlags and (CIsFreeBlockFlag or CIsLargeBlockFlag)) = 0 then
       Result := FreeMemMedium(P)
     // Is this a valid large block?
-    else if (LBlockSizeAndFlags and (IsFreeBlockFlag or IsMediumBlockFlag)) = 0 then
+    else if (LBlockSizeAndFlags and (CIsFreeBlockFlag or CIsMediumBlockFlag)) = 0 then
       Result := FreeMemLarge(P)
     else
-      Result := ResultError;
+      Result := CResultError;
 
 {$ifdef F4mDebugManager}
-    if Result = ResultError then
-      if (LBlockSizeAndFlags and IsMediumBlockFlag) <> 0 then
+    if Result = CResultError then
+      if (LBlockSizeAndFlags and CIsMediumBlockFlag) <> 0 then
         WriteError(P, 'FFreeMem-Medium')
-      else if (LBlockSizeAndFlags and IsLargeBlockFlag) <> 0 then
+      else if (LBlockSizeAndFlags and CIsLargeBlockFlag) <> 0 then
         WriteError(P, 'FFreeMem-Large')
       else
         WriteError(P, 'FFreeMem-Small');
 {$endif}
   end
   else
-    Result := ResultOK;
+    Result := CResultOK;
 end;
 
 function FReallocMem(P: Pointer; Size: NativeInt): Pointer;
@@ -325,17 +343,17 @@ begin
   begin
     if Size > 0 then
     begin
-      // Get the block header: Is it actually a small block?
-      LBlockSizeAndFlags := PNativeUInt(NativeUInt(P) - BlockHeaderSize)^;
+      // Get the block header
+      LBlockSizeAndFlags := PNativeUInt(NativeUInt(P) - CBlockHeaderSize)^;
 
       // Is it a valid small block?
-      if (LBlockSizeAndFlags and (IsFreeBlockFlag or IsMediumBlockFlag or IsLargeBlockFlag)) = 0 then
+      if (LBlockSizeAndFlags and (CIsFreeBlockFlag or CIsMediumBlockFlag or CIsLargeBlockFlag)) = 0 then
         Result := ReallocMemSmall(P, Size)
       // Is this a valid medium block?
-      else if (LBlockSizeAndFlags and (IsFreeBlockFlag or IsLargeBlockFlag)) = 0 then
+      else if (LBlockSizeAndFlags and (CIsFreeBlockFlag or CIsLargeBlockFlag)) = 0 then
         Result := ReallocMemMedium(P, Size)
       // Is this a valid large block?
-      else if (LBlockSizeAndFlags and (IsFreeBlockFlag or IsMediumBlockFlag)) = 0 then
+      else if (LBlockSizeAndFlags and (CIsFreeBlockFlag or CIsMediumBlockFlag)) = 0 then
         Result := ReallocMemLarge(P, Size)
       // Bad pointer: probably an attempt to reallocate a free memory block.
       else
@@ -361,7 +379,7 @@ begin
   Result := FGetMem(Size);
 
   // Large blocks are already zero filled
-  if (Result <> nil) and (Size <= MaximumMediumBlockUserSize) then
+  if (Result <> nil) and (Size <= CMaximumMediumBlockUserSize) then
     FillChar(Result^, Size, 0);
 end;
 
@@ -395,6 +413,10 @@ end;
 
 procedure FFinalizeMemoryManager;
 begin
+  Inc(Shutdown);
+
+  FFinalizeThreadPool;
+
 {$ifdef F4mIncludeMemoryLeakTrackingCode}
   FTrackLeak.ScanForMemoryLeaks;
 {$endif}
@@ -411,6 +433,48 @@ begin
 
   // Free all large blocks
   FreeAllMemoryLarge;
+
+  Dec(Shutdown);
+end;
+
+function FGetOSAllocCachedCount: UInt32;
+  function GetOSAllocCachedCountPool(const APool: PThreadPool): UInt32;
+  var
+    LPLargeBlock: PLargeBlockHeader;
+    LPMediumBlockPoolHeader: PMediumBlockPoolHeader;
+  begin
+    Result := 0;
+    
+    LPMediumBlockPoolHeader := APool.MediumBlockPoolsCircularList.NextMediumBlockPoolHeader;
+    while LPMediumBlockPoolHeader <> @APool.MediumBlockPoolsCircularList do
+    begin
+      Inc(Result);
+      LPMediumBlockPoolHeader := LPMediumBlockPoolHeader.NextMediumBlockPoolHeader;
+    end;
+
+    LPLargeBlock := APool.LargeBlocksCircularList.NextLargeBlockHeader;
+    while LPLargeBlock <> @APool.LargeBlocksCircularList do
+    begin
+      Inc(Result);
+      LPLargeBlock := LPLargeBlock.NextLargeBlockHeader;
+    end;
+  end;
+var
+  Count: UInt32;
+  I: Int32;
+begin
+  Count := 0;
+  
+  for I := 0 to High(ThreadPools) do
+    Inc(Count, GetOSAllocCachedCountPool(@ThreadPools[I]));
+
+{$ifdef F4mCacheThreadOSAlloc}
+  Inc(Count, MediumBlockPoolCachedsCount);
+  for I := 0 to High(ThreadPools) do
+    Inc(Count, ThreadPools[I].MediumBlockPoolCachedsCount);
+{$endif}
+
+  Result := Count;
 end;
 
 {-------------------------Medium Block Management-------------------------}
@@ -418,22 +482,49 @@ end;
 // Allocates a new sequential feed medium block pool and immediately splits off a
 // block of the requested size. The block size must be a multiple of 16 and
 // medium blocks must be locked.
-function AllocNewSequentialFeedMediumPool(APool: PThreadPool; AFirstBlockSize: UInt32): Pointer;
+function AllocNewSequentialFeedMediumPool(const APool: PThreadPool; const AFirstBlockSize: UInt32): Pointer;
 var
   LOldFirstMediumBlockPool: PMediumBlockPoolHeader;
-  LNewPool: Pointer;
+  LNewPool: PLinkNode;
 begin
+  Assert(APool.MediumBlocksLocked <> 0, 'medium-block-locked must be on before call');
+
   // Bin the current sequential feed remainder
-  BinMediumSequentialFeedRemainder(APool);
+  if APool.MediumSequentialFeedBytesLeft <> 0 then
+    BinMediumSequentialFeedRemainder(APool);
 
   // Allocate a new sequential feed block pool
 {$ifdef F4mCacheThreadOSAlloc}
-  // Cache is available?
-  LNewPool := UnlinkIf(APool.MediumCachedOSAlloc);
+  // Is thread cache available?
+  LNewPool := APool.MediumBlockPoolCacheds;
+  if LNewPool <> nil then
+  begin
+    APool.MediumBlockPoolCacheds := LNewPool.Next;
+    LNewPool.Next := nil;
+    Dec(APool.MediumBlockPoolCachedsCount);
+  end;
+
   if LNewPool = nil then
-    LNewPool := OSAlloc(MediumBlockPoolSize);
+  begin
+    // Is global cache available?
+    LockAcquire(@MediumBlockPoolCachedsLocked);
+
+    LNewPool := MediumBlockPoolCacheds;
+    if LNewPool <> nil then
+    begin
+      MediumBlockPoolCacheds := LNewPool.Next;
+      LNewPool.Next := nil;
+      Dec(MediumBlockPoolCachedsCount);
+    end;
+
+    //LockRelease(@MediumBlockPoolCachedsLocked);
+    MediumBlockPoolCachedsLocked := 0;
+  end;
+
+  if LNewPool = nil then
+    LNewPool := OSAlloc(CMediumBlockPoolSize);
 {$else}
-  LNewPool := OSAlloc(MediumBlockPoolSize);
+  LNewPool := OSAlloc(CMediumBlockPoolSize);
 {$endif}
 
   if LNewPool <> nil then
@@ -441,24 +532,24 @@ begin
     // Insert this block pool into the list of block pools
     LOldFirstMediumBlockPool := APool.MediumBlockPoolsCircularList.NextMediumBlockPoolHeader;
     PMediumBlockPoolHeader(LNewPool).PreviousMediumBlockPoolHeader := @APool.MediumBlockPoolsCircularList;
-    APool.MediumBlockPoolsCircularList.NextMediumBlockPoolHeader := LNewPool;
+    APool.MediumBlockPoolsCircularList.NextMediumBlockPoolHeader := Pointer(LNewPool);
     PMediumBlockPoolHeader(LNewPool).NextMediumBlockPoolHeader := LOldFirstMediumBlockPool;
-    LOldFirstMediumBlockPool.PreviousMediumBlockPoolHeader := LNewPool;
+    LOldFirstMediumBlockPool.PreviousMediumBlockPoolHeader := Pointer(LNewPool);
 
     // Store the sequential feed pool trailer
-    PNativeUInt(NativeUInt(LNewPool) + MediumBlockPoolSize - BlockHeaderSize)^ :=
-      APool.IndexFlag or IsMediumBlockFlag;
+    PNativeUInt(NativeUInt(LNewPool) + CMediumBlockPoolSize - CBlockHeaderSize)^ :=
+      APool.Index or CIsMediumBlockFlag;
 
     // Get the number of bytes still available
-    APool.MediumSequentialFeedBytesLeft := (MediumBlockPoolSize - MediumBlockPoolHeaderSize) - AFirstBlockSize;
+    APool.MediumSequentialFeedBytesLeft := (CMediumBlockPoolSize - CMediumBlockPoolHeaderSize) - AFirstBlockSize;
 
     // Get the result
-    Result := Pointer(NativeUInt(LNewPool) + MediumBlockPoolSize - AFirstBlockSize);
+    Result := Pointer(NativeUInt(LNewPool) + CMediumBlockPoolSize - AFirstBlockSize);
     APool.LastSequentiallyFedMediumBlock := Result;
 
     // Store the block header
-    PNativeUInt(NativeUInt(Result) - BlockHeaderSize)^ :=
-      APool.IndexFlag or AFirstBlockSize or IsMediumBlockFlag;
+    PNativeUInt(NativeUInt(Result) - CBlockHeaderSize)^ :=
+      APool.Index or AFirstBlockSize or CIsMediumBlockFlag;
   end
   else
   begin
@@ -470,120 +561,135 @@ end;
 
 // Bins what remains in the current sequential feed medium block pool.
 // Medium blocks must be locked.
-procedure BinMediumSequentialFeedRemainder(APool: PThreadPool);
+procedure BinMediumSequentialFeedRemainder(const APool: PThreadPool);
 var
   LPRemainderBlock, LNextMediumBlock: Pointer;
   LSequentialFeedFreeSize, LNextBlockSizeAndFlags: NativeUInt;
 begin
+  Assert(APool.MediumBlocksLocked <> 0, 'medium-block-locked must be on before call');
+  Assert(APool.MediumSequentialFeedBytesLeft <> 0);
+
   LSequentialFeedFreeSize := APool.MediumSequentialFeedBytesLeft;
-  if LSequentialFeedFreeSize > 0 then
+  
+  // Get the block after the open space
+  LNextMediumBlock := APool.LastSequentiallyFedMediumBlock;
+  LNextBlockSizeAndFlags := PNativeUInt(NativeUInt(LNextMediumBlock) - CBlockHeaderSize)^;
+
+  // Point to the remainder
+  LPRemainderBlock := Pointer(NativeUInt(LNextMediumBlock) - LSequentialFeedFreeSize);
+
+  // Can the next block be combined with the remainder?
+  if (LNextBlockSizeAndFlags and CIsFreeBlockFlag) <> 0 then
   begin
-    // Get the block after the open space
-    LNextMediumBlock := APool.LastSequentiallyFedMediumBlock;
-    LNextBlockSizeAndFlags := PNativeUInt(NativeUInt(LNextMediumBlock) - BlockHeaderSize)^;
+    // Increase the size of this block
+    Inc(LSequentialFeedFreeSize, LNextBlockSizeAndFlags and CExtractMediumSizeMask);
 
-    // Point to the remainder
-    LPRemainderBlock := Pointer(NativeUInt(LNextMediumBlock) - LSequentialFeedFreeSize);
-
-    // Can the next block be combined with the remainder?
-    if (LNextBlockSizeAndFlags and IsFreeBlockFlag) <> 0 then
-    begin
-      // Increase the size of this block
-      Inc(LSequentialFeedFreeSize, LNextBlockSizeAndFlags and ExtractMediumSizeMask);
-
-      // Remove the next block as well
-      if (LNextBlockSizeAndFlags and ExtractMediumSizeMask) >= MinimumMediumBlockSize then
-        RemoveMediumFreeBlock(APool, LNextMediumBlock);
-    end
-    else
-    begin
-      // Set the "previous block is free" flag of the next block
-      PNativeUInt(NativeUInt(LNextMediumBlock) - BlockHeaderSize)^ :=
-        LNextBlockSizeAndFlags or PreviousMediumBlockIsFreeFlag;
-    end;
-
-    // Store the size of the block as well as the flags
-    PNativeUInt(NativeUInt(LPRemainderBlock) - BlockHeaderSize)^ :=
-      APool.IndexFlag or LSequentialFeedFreeSize or IsMediumBlockFlag or IsFreeBlockFlag;
-
-    // Store the trailing size marker
-    PNativeUInt(NativeUInt(LPRemainderBlock) + LSequentialFeedFreeSize - BlockHeaderSize * 2)^ :=
-      APool.IndexFlag or LSequentialFeedFreeSize;
-
-    // Bin this medium block
-    if LSequentialFeedFreeSize >= MinimumMediumBlockSize then
-      InsertMediumBlockIntoBin(APool, LPRemainderBlock, LSequentialFeedFreeSize);
+    // Remove the next block as well
+    if (LNextBlockSizeAndFlags and CExtractMediumSizeMask) >= CMinimumMediumBlockSize then
+      RemoveMediumFreeBlock(APool, LNextMediumBlock);
+  end
+  else
+  begin
+    // Set the "previous block is free" flag of the next block
+    PNativeUInt(NativeUInt(LNextMediumBlock) - CBlockHeaderSize)^ :=
+      LNextBlockSizeAndFlags or CPreviousMediumBlockIsFreeFlag;
   end;
+
+  // Store the size of the block as well as the flags
+  PNativeUInt(NativeUInt(LPRemainderBlock) - CBlockHeaderSize)^ :=
+    APool.Index or LSequentialFeedFreeSize or CIsMediumBlockFlag or CIsFreeBlockFlag;
+
+  // Store the trailing size marker
+  PNativeUInt(NativeUInt(LPRemainderBlock) + LSequentialFeedFreeSize - CBlockHeaderSize * 2)^ :=
+    APool.Index or LSequentialFeedFreeSize;
+
+  // Bin this medium block
+  if LSequentialFeedFreeSize >= CMinimumMediumBlockSize then
+    InsertMediumBlockIntoBin(APool, LPRemainderBlock, LSequentialFeedFreeSize);
 end;
 
-// Frees a medium block pool. Medium blocks must be locked on entry.
-function FreeMediumBlockPool(APool: PThreadPool; AMediumBlockPool: Pointer): Integer;
-//var
-//  LPPreviousMediumBlockPoolHeader, LPNextMediumBlockPoolHeader: PMediumBlockPoolHeader;
+function FreeMediumBlockPool(const APool: PThreadPool; AMediumBlockPool: PLinkNode): Integer;
 begin
-  // Remove this medium block pool from the linked list
-  //LPPreviousMediumBlockPoolHeader := AMediumBlockPool.PreviousMediumBlockPoolHeader;
-  //LPNextMediumBlockPoolHeader := AMediumBlockPool.NextMediumBlockPoolHeader;
-  //LPPreviousMediumBlockPoolHeader.NextMediumBlockPoolHeader := LPNextMediumBlockPoolHeader;
-  //LPNextMediumBlockPoolHeader.PreviousMediumBlockPoolHeader := LPPreviousMediumBlockPoolHeader;
-
+  Assert(APool.MediumBlocksLocked <> 0, 'medium-block-locked must be on before call');
 
 {$ifdef F4mCacheThreadOSAlloc}
-  if (Shutdown = 0) and (APool <> nil) and (APool.MediumCachedOSAlloc = nil) then
+  if Shutdown = 0 then
   begin
     // Reset it here while it is still hot?
-    //FillChar(AMediumBlockPool^, MediumBlockPoolSize, 0);
-    if LinkIf(APool.MediumCachedOSAlloc, AMediumBlockPool) then
+    //FillChar(Pointer(AMediumBlockPool)^, CMediumBlockPoolSize, 0);
+
+    if APool.MediumBlockPoolCachedsCount < CMediumBlockThreadPoolCachedsMax then
     begin
-      Result := ResultOK;
-      Exit;
+      AMediumBlockPool.Next := APool.MediumBlockPoolCacheds;
+      APool.MediumBlockPoolCacheds := AMediumBlockPool;
+      AMediumBlockPool := nil;
+      Inc(APool.MediumBlockPoolCachedsCount);
+    end;
+
+    if (AMediumBlockPool <> nil) and (MediumBlockPoolCachedsCount < CMediumBlockPoolCachedsMax) then
+    begin
+      LockAcquire(@MediumBlockPoolCachedsLocked);
+
+      if MediumBlockPoolCachedsCount < CMediumBlockPoolCachedsMax then
+      begin
+        AMediumBlockPool.Next := MediumBlockPoolCacheds;
+        MediumBlockPoolCacheds := AMediumBlockPool;
+        AMediumBlockPool := nil;
+        Inc(MediumBlockPoolCachedsCount);
+      end;
+
+      //LockRelease(@MediumBlockPoolCachedsLocked);
+      MediumBlockPoolCachedsLocked := 0;
     end;
   end;
 {$endif}
 
   // Free the medium block pool
-  if OSFree(AMediumBlockPool) then
-    Result := ResultOK
+  if (AMediumBlockPool = nil) or OSFree(AMediumBlockPool) then
+    Result := CResultOK
   else
-    Result := ResultError;
+    Result := CResultError;
 end;
 
 // Gets the first and last block pointer for a small block pool
-procedure GetFirstAndLastSmallBlockInPool(APSmallBlockPool: PSmallBlockPoolHeader; var AFirstPtr, ALastPtr: Pointer);
+procedure GetFirstAndLastSmallBlockInPool(const APSmallBlockPool: PSmallBlockPoolHeader;
+  out FirstPtr, LastPtr: Pointer);
 var
   LBlockSize: UInt32;
 begin
   // Get the pointer to the first block
-  AFirstPtr := Pointer(NativeUInt(APSmallBlockPool) + SmallBlockPoolHeaderSize);
+  FirstPtr := Pointer(NativeUInt(APSmallBlockPool) + CSmallBlockPoolHeaderSize);
 
   // Get a pointer to the last block
   if (APSmallBlockPool.BlockType.CurrentSequentialFeedPool <> APSmallBlockPool)
-    or (NativeUInt(APSmallBlockPool.BlockType.NextSequentialFeedBlockAddress) > NativeUInt(APSmallBlockPool.BlockType.MaxSequentialFeedBlockAddress)) then
+      or (NativeUInt(APSmallBlockPool.BlockType.NextSequentialFeedBlockAddress) > NativeUInt(APSmallBlockPool.BlockType.MaxSequentialFeedBlockAddress)) then
   begin
     // Not the sequential feed - point to the end of the block
-    LBlockSize := PNativeUInt(NativeUInt(APSmallBlockPool) - BlockHeaderSize)^ and ExtractMediumSizeMask;
-    ALastPtr := Pointer(NativeUInt(APSmallBlockPool) + LBlockSize - APSmallBlockPool.BlockType.BlockSize);
+    LBlockSize := PNativeUInt(NativeUInt(APSmallBlockPool) - CBlockHeaderSize)^ and CExtractMediumSizeMask;
+    LastPtr := Pointer(NativeUInt(APSmallBlockPool) + LBlockSize - APSmallBlockPool.BlockType.BlockSize);
   end
   else
   begin
     // The sequential feed pool - point to before the next sequential feed block
-    ALastPtr := Pointer(NativeUInt(APSmallBlockPool.BlockType.NextSequentialFeedBlockAddress) - 1);
+    LastPtr := Pointer(NativeUInt(APSmallBlockPool.BlockType.NextSequentialFeedBlockAddress) - 1);
   end;
 end;
 
 // Gets the first medium block in the medium block pool
-function GetFirstMediumBlockInPool(APool: PThreadPool; APMediumBlockPoolHeader: PMediumBlockPoolHeader): Pointer;
+function GetFirstMediumBlockInPool(const APool: PThreadPool; const APMediumBlockPoolHeader: PMediumBlockPoolHeader): Pointer;
 begin
+  Assert(APool.MediumBlocksLocked <> 0, 'medium-block-locked must be on before call');
+
   if (APool.MediumSequentialFeedBytesLeft = 0)
-    or (NativeUInt(APool.LastSequentiallyFedMediumBlock) < NativeUInt(APMediumBlockPoolHeader))
-    or (NativeUInt(APool.LastSequentiallyFedMediumBlock) > NativeUInt(APMediumBlockPoolHeader) + MediumBlockPoolSize) then
+      or (NativeUInt(APool.LastSequentiallyFedMediumBlock) < NativeUInt(APMediumBlockPoolHeader))
+      or (NativeUInt(APool.LastSequentiallyFedMediumBlock) > NativeUInt(APMediumBlockPoolHeader) + CMediumBlockPoolSize) then
   begin
-    Result := Pointer(NativeUInt(APMediumBlockPoolHeader) + MediumBlockPoolHeaderSize);
+    Result := Pointer(NativeUInt(APMediumBlockPoolHeader) + CMediumBlockPoolHeaderSize);
   end
   else
   begin
     // Is the sequential feed pool empty?
-    if APool.MediumSequentialFeedBytesLeft <> MediumBlockPoolSize - MediumBlockPoolHeaderSize then
+    if APool.MediumSequentialFeedBytesLeft <> CMediumBlockPoolSize - CMediumBlockPoolHeaderSize then
       Result := APool.LastSequentiallyFedMediumBlock
     else
       Result := nil;
@@ -592,16 +698,19 @@ end;
 
 // Inserts a medium block into the appropriate medium block bin.
 // Medium blocks must be locked.
-procedure InsertMediumBlockIntoBin(APool: PThreadPool; APMediumFreeBlock: PMediumFreeBlock; AMediumBlockSize: UInt32);
+procedure InsertMediumBlockIntoBin(const APool: PThreadPool; const APMediumFreeBlock: PMediumFreeBlock;
+  const AMediumBlockSize: UInt32);
 var
   LPBin, LPFirstFreeBlock: PMediumFreeBlock;
   LBinNumber, LBinGroupNumber: UInt32;
 begin
+  Assert(APool.MediumBlocksLocked <> 0, 'medium-block-locked must be on before call');
+
   // Get the bin number for this block size. Get the bin that holds blocks of at least this size.
-  //LBinNumber := (AMediumBlockSize - MinimumMediumBlockSize) div MediumBlockGranularity;
-  LBinNumber := (AMediumBlockSize - MinimumMediumBlockSize) shr MediumBlockGranularityShift;
-  if LBinNumber >= MediumBlockBinCount then
-    LBinNumber := MediumBlockBinCount - 1;
+  //LBinNumber := (AMediumBlockSize - CMinimumMediumBlockSize) div CMediumBlockGranularity;
+  LBinNumber := (AMediumBlockSize - CMinimumMediumBlockSize) shr CMediumBlockGranularityShift;
+  if LBinNumber >= CMediumBlockBinCount then
+    LBinNumber := CMediumBlockBinCount - 1;
 
   // Get the bin
   LPBin := @APool.MediumBlockBins[LBinNumber];
@@ -618,7 +727,7 @@ begin
   begin
     // Get the group number
     //LBinGroupNumber := LBinNumber div MediumBlockBinGroupCount;
-    LBinGroupNumber := LBinNumber shr MediumBlockBinGroupCountShift;
+    LBinGroupNumber := LBinNumber shr CMediumBlockBinGroupCountShift;
 
     // Flag this bin as used
     APool.MediumBlockBinBitmaps[LBinGroupNumber] := APool.MediumBlockBinBitmaps[LBinGroupNumber]
@@ -639,7 +748,7 @@ function IsMemoryAllocated: Boolean;
 var
   I: Int32;
 begin
-  for I := 0 to (MaximumThreadPool - 1) do
+  for I := 0 to (CMaximumThreadPool - 1) do
   begin
     if IsMemoryAllocatedPool(@ThreadPools[I]) then
     begin
@@ -653,25 +762,27 @@ end;
 
 // Advances to the next medium block. Returns nil if the end of the medium block pool
 // has been reached
-function NextMediumBlock(APMediumBlock: Pointer): Pointer;
+function NextMediumBlock(const APMediumBlock: Pointer): Pointer;
 begin
   // Advance the pointer
   Result := Pointer(NativeUInt(APMediumBlock) +
-    (PNativeUInt(NativeUInt(APMediumBlock) - BlockHeaderSize)^ and ExtractMediumSizeMask));
+    (PNativeUInt(NativeUInt(APMediumBlock) - CBlockHeaderSize)^ and CExtractMediumSizeMask));
 
   // Is the next block the end of medium pool marker?
-  if (PNativeUInt(NativeUInt(Result) - BlockHeaderSize)^ and ExtractMediumSizeMask) = 0 then
+  if (PNativeUInt(NativeUInt(Result) - CBlockHeaderSize)^ and CExtractMediumSizeMask) = 0 then
     Result := nil;
 end;
 
 // Removes a medium block from the circular linked list of free blocks.
 // Does not change any header flags.
 // Medium blocks should be locked.
-procedure RemoveMediumFreeBlock(APool: PThreadPool; APMediumFreeBlock: PMediumFreeBlock);
+procedure RemoveMediumFreeBlock(const APool: PThreadPool; const APMediumFreeBlock: PMediumFreeBlock);
 var
   LPreviousFreeBlock, LNextFreeBlock: PMediumFreeBlock;
   LBinNumber, LBinGroupNumber: UInt32;
 begin
+  Assert(APool.MediumBlocksLocked <> 0, 'medium-block-locked must be on before call');
+
   // Get the current previous and next blocks
   LNextFreeBlock := APMediumFreeBlock.NextFreeBlock;
   LPreviousFreeBlock := APMediumFreeBlock.PreviousFreeBlock;
@@ -687,7 +798,7 @@ begin
     // Get the bin number for this block size
     LBinNumber := (NativeUInt(LNextFreeBlock) - NativeUInt(@APool.MediumBlockBins)) div SizeOf(TMediumFreeBlock);
     //LBinGroupNumber := LBinNumber div MediumBlockBinGroupCount;
-    LBinGroupNumber := LBinNumber shr MediumBlockBinGroupCountShift;
+    LBinGroupNumber := LBinNumber shr CMediumBlockBinGroupCountShift;
 
     // Flag this bin as empty
     APool.MediumBlockBinBitmaps[LBinGroupNumber] := APool.MediumBlockBinBitmaps[LBinGroupNumber]
@@ -702,9 +813,46 @@ begin
   end;
 end;
 
+{$ifdef F4mInstallMemoryManager}
+procedure FInstallMemoryManager;
+begin
+  GetMemoryManager(OldMemoryManager);
+
+{$ifdef F4mUseSharedMemoryManager}
+  UseSharedMemory := FAttemptToUseSharedMemoryManager;
+  if UseSharedMemory = smOK then
+    Exit;
+{$endif}
+
+  SetMemoryManager(FMemoryManager);
+  IsMemoryFManagerSet := True;
+  
+{$ifdef F4mShareMemoryManager}
+  SharedMemory := FShareMemoryManager;
+{$endif}
+end;
+{$endif}
+
+{$ifdef F4mInstallMemoryManager}
+procedure FUninstallMemoryManager;
+begin
+  if IsMemoryFManagerSet then
+  begin
+    IsMemoryFManagerSet := False;
+    SetMemoryManager(OldMemoryManager);
+  end;
+end;
+{$endif}
+
 initialization
+{$ifdef F4mInstallMemoryManager}
+  FInstallMemoryManager;
+{$endif}
 
 finalization
   FFinalizeMemoryManager;
+{$ifdef F4mInstallMemoryManager}
+  FUninstallMemoryManager;
+{$endif}
 
 end.

@@ -57,8 +57,11 @@ type
   TLogLine = array[0..1023] of AnsiChar;
 
 const
-  MaximumMemoryUsedSlot = 100000;
-  MaximumMemoryUsedPrim = 99991;
+  CMaximumMemoryUsedSlot = 100000;
+  CMaximumMemoryUsedPrim = 99991;
+
+  EFileName: PAnsiChar = 'DebugFastMM4me.log';
+  GFileName: PAnsiChar = 'DebugFastMM4mg.log';
 
 var
   LogSequence: NativeUInt;
@@ -91,9 +94,6 @@ begin
 end;
 
 procedure InitializeDebug;
-const
-  EFileName: PAnsiChar = 'DebugFastMM4me.log';
-  GFileName: PAnsiChar = 'DebugFastMM4mg.log';
 var
   Ptr: PAnsiChar;
   DebugFastMM4mFileName: array[0..1023] of AnsiChar;
@@ -121,7 +121,7 @@ begin
   if AllocedMems = nil then
   begin
     AllocedMemc := 0;
-    AllocedMems := OSAlloc(MaximumMemoryUsedSlot * SizeOf(Pointer));
+    AllocedMems := OSAlloc(CMaximumMemoryUsedSlot * SizeOf(Pointer));
   end;
 end;
 
@@ -131,7 +131,7 @@ var
   N: Int32;
 begin
   N := AllocedMemc;
-  I := NativeUInt(APointer) mod MaximumMemoryUsedPrim;
+  I := NativeUInt(APointer) mod CMaximumMemoryUsedPrim;
   repeat
     if AllocedMems[I] = APointer then
     begin
@@ -140,7 +140,7 @@ begin
     end;
 
     Inc(I);
-    if I >= MaximumMemoryUsedSlot then
+    if I >= CMaximumMemoryUsedSlot then
       I := 0;
 
     Dec(N);
@@ -157,7 +157,7 @@ begin
   C := 1;
   M := Maxint;
   N := AllocedMemc;
-  I := NativeUInt(APointer) mod MaximumMemoryUsedPrim;
+  I := NativeUInt(APointer) mod CMaximumMemoryUsedPrim;
   repeat
     // Keep track number of collisions
     if AllocedMems[I] <> nil then
@@ -174,7 +174,7 @@ begin
     end;
 
     Inc(I);
-    if I >= MaximumMemoryUsedSlot then
+    if I >= CMaximumMemoryUsedSlot then
       I := 0;
 
     Dec(N);
@@ -193,7 +193,7 @@ var
   N: Int32;
 begin
   N := AllocedMemc;
-  I := NativeUInt(APointer) mod MaximumMemoryUsedPrim;
+  I := NativeUInt(APointer) mod CMaximumMemoryUsedPrim;
   repeat
     if AllocedMems[I] = APointer then
     begin
@@ -203,7 +203,7 @@ begin
     end;
 
     Inc(I);
-    if I >= MaximumMemoryUsedSlot then
+    if I >= CMaximumMemoryUsedSlot then
       I := 0;
 
     Dec(N);
@@ -226,7 +226,7 @@ begin
   Ptr := AppendToBuffer(' ptr: ', Length(' ptr: '), Ptr);
   Ptr := AppendToBuffer(NativeUInt(APointer), Ptr);
 
-  Ptr := AppendToBuffer(NL, Length(NL), Ptr);
+  Ptr := AppendToBuffer(CNL, Length(CNL), Ptr);
   FileWrite(LogEFileHandle, Line[0], Ptr - @Line[0]);
 end;
 
@@ -244,7 +244,7 @@ begin
   Ptr := AppendToBuffer(' ptr: ', Length(' ptr: '), Ptr);
   Ptr := AppendToBuffer(NativeUInt(APointer), Ptr);
 
-  Ptr := AppendToBuffer(NL, Length(NL), Ptr);
+  Ptr := AppendToBuffer(CNL, Length(CNL), Ptr);
   FileWrite(LogGFileHandle, Line[0], Ptr - @Line[0]);
 end;
 
@@ -260,7 +260,7 @@ begin
   Ptr := AppendToBuffer(LockxchgInc(@LogSequence), @Line[0]);
   Ptr := AppendToBuffer(' GetMem M:', Length(' GetMem M:'), Ptr);
   Ptr := AppendToBuffer(' pool: ', Length(' pool: '), Ptr);
-  Ptr := AppendToBuffer(APool.IndexFlag shr MediumSlotIndexShift, Ptr);
+  Ptr := AppendToBuffer(APool.Index shr CMediumSlotIndexShift, Ptr);
   Ptr := AppendToBuffer(' ptr: ', Length(' ptr: '), Ptr);
   Ptr := AppendToBuffer(NativeUInt(APointer), Ptr);
 
@@ -273,7 +273,7 @@ begin
   Ptr := AppendToBuffer(' size: ', Length(' size: '), Ptr);
   Ptr := AppendToBuffer(ASize, Ptr);
 
-  Ptr := AppendToBuffer(NL, Length(NL), Ptr);
+  Ptr := AppendToBuffer(CNL, Length(CNL), Ptr);
   FileWrite(LogGFileHandle, Line[0], Ptr - @Line[0]);
 end;
 
@@ -289,7 +289,7 @@ begin
   Ptr := AppendToBuffer(LockxchgInc(@LogSequence), @Line[0]);
   Ptr := AppendToBuffer(' EGetMem M:', Length(' EGetMem M:'), Ptr);
   Ptr := AppendToBuffer(' pool: ', Length(' pool: '), Ptr);
-  Ptr := AppendToBuffer(APool.IndexFlag shr MediumSlotIndexShift, Ptr);
+  Ptr := AppendToBuffer(APool.Index shr CMediumSlotIndexShift, Ptr);
   Ptr := AppendToBuffer(' ptr: ', Length(' ptr: '), Ptr);
   Ptr := AppendToBuffer(NativeUInt(APointer), Ptr);
 
@@ -302,7 +302,7 @@ begin
   Ptr := AppendToBuffer(' size: ', Length(' size: '), Ptr);
   Ptr := AppendToBuffer(ASize, Ptr);
 
-  Ptr := AppendToBuffer(NL, Length(NL), Ptr);
+  Ptr := AppendToBuffer(CNL, Length(CNL), Ptr);
   FileWrite(LogEFileHandle, Line[0], Ptr - @Line[0]);
 end;
 
@@ -318,14 +318,14 @@ begin
   Ptr := AppendToBuffer(LockxchgInc(@LogSequence), @Line[0]);
   Ptr := AppendToBuffer(' EFreeMem M:', Length(' EFreeMem M:'), Ptr);
   Ptr := AppendToBuffer(' pool: ', Length(' pool: '), Ptr);
-  Ptr := AppendToBuffer(APool.IndexFlag shr MediumSlotIndexShift, Ptr);
+  Ptr := AppendToBuffer(APool.Index shr CMediumSlotIndexShift, Ptr);
   Ptr := AppendToBuffer(' ptr: ', Length(' ptr: '), Ptr);
   Ptr := AppendToBuffer(NativeUInt(APointer), Ptr);
 
   Ptr := AppendToBuffer(' flag: ', Length(' flag: '), Ptr);
   Ptr := AppendToBuffer(ASizeAndFlags, Ptr);
 
-  Ptr := AppendToBuffer(NL, Length(NL), Ptr);
+  Ptr := AppendToBuffer(CNL, Length(CNL), Ptr);
   FileWrite(LogEFileHandle, Line[0], Ptr - @Line[0]);
 end;
 
@@ -341,18 +341,18 @@ begin
   Ptr := AppendToBuffer(LockxchgInc(@LogSequence), @Line[0]);
   Ptr := AppendToBuffer(' EReallocMem M:', Length(' EReallocMem M:'), Ptr);
   Ptr := AppendToBuffer(' pool: ', Length(' pool: '), Ptr);
-  Ptr := AppendToBuffer(APool.IndexFlag shr MediumSlotIndexShift, Ptr);
+  Ptr := AppendToBuffer(APool.Index shr CMediumSlotIndexShift, Ptr);
   Ptr := AppendToBuffer(' ptr: ', Length(' ptr: '), Ptr);
   Ptr := AppendToBuffer(NativeUInt(APointer), Ptr);
 
   Ptr := AppendToBuffer(' flag: ', Length(' flag: '), Ptr);
   Ptr := AppendToBuffer(ASizeAndFlags, Ptr);
   Ptr := AppendToBuffer(' av-size: ', Length(' av-size: '), Ptr);
-  Ptr := AppendToBuffer(ASizeAndFlags and ExtractMediumSizeMask, Ptr);
+  Ptr := AppendToBuffer(ASizeAndFlags and CExtractMediumSizeMask, Ptr);
   Ptr := AppendToBuffer(' size: ', Length(' size: '), Ptr);
   Ptr := AppendToBuffer(ASize, Ptr);
 
-  Ptr := AppendToBuffer(NL, Length(NL), Ptr);
+  Ptr := AppendToBuffer(CNL, Length(CNL), Ptr);
   FileWrite(LogEFileHandle, Line[0], Ptr - @Line[0]);
 end;
 
@@ -368,7 +368,7 @@ begin
   Ptr := AppendToBuffer(LockxchgInc(@LogSequence), @Line[0]);
   Ptr := AppendToBuffer(' GetMem S:', Length(' GetMem S:'), Ptr);
   Ptr := AppendToBuffer(' pool: ', Length(' pool: '), Ptr);
-  Ptr := AppendToBuffer(APool.IndexFlag shr MediumSlotIndexShift, Ptr);
+  Ptr := AppendToBuffer(APool.Index shr CMediumSlotIndexShift, Ptr);
   Ptr := AppendToBuffer(' ptr: ', Length(' ptr: '), Ptr);
   Ptr := AppendToBuffer(NativeUInt(APointer), Ptr);
 
@@ -385,7 +385,7 @@ begin
   Ptr := AppendToBuffer(' size: ', Length(' size: '), Ptr);
   Ptr := AppendToBuffer(ASize, Ptr);
 
-  Ptr := AppendToBuffer(NL, Length(NL), Ptr);
+  Ptr := AppendToBuffer(CNL, Length(CNL), Ptr);
   FileWrite(LogGFileHandle, Line[0], Ptr - @Line[0]);
 end;
 
@@ -402,7 +402,7 @@ begin
   Ptr := AppendToBuffer(LockxchgInc(@LogSequence), @Line[0]);
   Ptr := AppendToBuffer(' EGetMem S:', Length(' EGetMem S:'), Ptr);
   Ptr := AppendToBuffer(' pool: ', Length(' pool: '), Ptr);
-  Ptr := AppendToBuffer(APool.IndexFlag shr MediumSlotIndexShift, Ptr);
+  Ptr := AppendToBuffer(APool.Index shr CMediumSlotIndexShift, Ptr);
   Ptr := AppendToBuffer(' ptr: ', Length(' ptr: '), Ptr);
   Ptr := AppendToBuffer(NativeUInt(APointer), Ptr);
 
@@ -419,7 +419,7 @@ begin
   Ptr := AppendToBuffer(' size: ', Length(' size: '), Ptr);
   Ptr := AppendToBuffer(ASize, Ptr);
 
-  Ptr := AppendToBuffer(NL, Length(NL), Ptr);
+  Ptr := AppendToBuffer(CNL, Length(CNL), Ptr);
   FileWrite(LogEFileHandle, Line[0], Ptr - @Line[0]);
 end;
 
@@ -435,7 +435,7 @@ begin
   Ptr := AppendToBuffer(LockxchgInc(@LogSequence), @Line[0]);
   Ptr := AppendToBuffer(' EFreeMem S:', Length(' EFreeMem S:'), Ptr);
   Ptr := AppendToBuffer(' pool: ', Length(' pool: '), Ptr);
-  Ptr := AppendToBuffer(APool.IndexFlag shr MediumSlotIndexShift, Ptr);
+  Ptr := AppendToBuffer(APool.Index shr CMediumSlotIndexShift, Ptr);
   Ptr := AppendToBuffer(' ptr: ', Length(' ptr: '), Ptr);
   Ptr := AppendToBuffer(NativeUInt(APointer), Ptr);
 
@@ -449,7 +449,7 @@ begin
   Ptr := AppendToBuffer(' type: ', Length(' type: '), Ptr);
   Ptr := AppendToBuffer(NativeUInt(ABlockType), Ptr);
 
-  Ptr := AppendToBuffer(NL, Length(NL), Ptr);
+  Ptr := AppendToBuffer(CNL, Length(CNL), Ptr);
   FileWrite(LogEFileHandle, Line[0], Ptr - @Line[0]);
 end;
 
@@ -466,7 +466,7 @@ begin
   Ptr := AppendToBuffer(LockxchgInc(@LogSequence), @Line[0]);
   Ptr := AppendToBuffer(' EReallocMem S:', Length(' EReallocMem S:'), Ptr);
   Ptr := AppendToBuffer(' pool: ', Length(' pool: '), Ptr);
-  Ptr := AppendToBuffer(APool.IndexFlag shr MediumSlotIndexShift, Ptr);
+  Ptr := AppendToBuffer(APool.Index shr CMediumSlotIndexShift, Ptr);
   Ptr := AppendToBuffer(' ptr: ', Length(' ptr: '), Ptr);
   Ptr := AppendToBuffer(NativeUInt(APointer), Ptr);
 
@@ -485,7 +485,7 @@ begin
   Ptr := AppendToBuffer(' size: ', Length(' size: '), Ptr);
   Ptr := AppendToBuffer(ASize, Ptr);
 
-  Ptr := AppendToBuffer(NL, Length(NL), Ptr);
+  Ptr := AppendToBuffer(CNL, Length(CNL), Ptr);
   FileWrite(LogEFileHandle, Line[0], Ptr - @Line[0]);
 end;
 

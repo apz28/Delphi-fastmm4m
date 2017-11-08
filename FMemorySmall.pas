@@ -70,36 +70,37 @@ function ReallocMemSmall(const P: Pointer; const Size: NativeUInt): Pointer;
 procedure FreeAllMemorySmall;
 
 // Locks all small block types
-procedure LockAllSmallBlockTypes(APool: PThreadPool);
+procedure LockAllSmallBlockTypes(const APool: PThreadPool);
 
 // Unlock all the small block types
-procedure UnlockAllSmallBlockTypes(APool: PThreadPool);
+procedure UnlockAllSmallBlockTypes(const APool: PThreadPool);
 
 implementation
 
 uses
-  FMemory, FMemoryMedium
+  FMemoryMedium, FMemory 
 {$ifdef F4mDebugManager}
   , FDebug
 {$endif}
   ;
 
 // Locks all small block types
-procedure LockAllSmallBlockTypes(APool: PThreadPool);
+procedure LockAllSmallBlockTypes(const APool: PThreadPool);
 var
   I: Int32;
 begin
-  for I := 0 to (NumSmallBlockTypes - 1) do
+  for I := 0 to (CNumSmallBlockTypes - 1) do
     LockAcquire(@APool.SmallBlockTypes[I].BlockTypeLocked);
 end;
 
 // Unlock all the small block types
-procedure UnlockAllSmallBlockTypes(APool: PThreadPool);
+procedure UnlockAllSmallBlockTypes(const APool: PThreadPool);
 var
   I: Int32;
 begin
-  for I := 0 to (NumSmallBlockTypes - 1) do
-    LockRelease(@APool.SmallBlockTypes[I].BlockTypeLocked);
+  for I := 0 to (CNumSmallBlockTypes - 1) do
+    //LockRelease(@APool.SmallBlockTypes[I].BlockTypeLocked);
+    APool.SmallBlockTypes[I].BlockTypeLocked := 0;
 end;
 
 function GetMemSmall(const APool: PThreadPool; const Size: UInt32): Pointer;
@@ -114,16 +115,16 @@ var
 begin
   Assert(APool <> nil);
   Assert(Size > 0);
-  Assert(Size <= MaximumSmallBlockUserSize);
+  Assert(Size <= CMaximumSmallBlockUserSize);
 
   // Get the block type from the size
   LPSmallBlockType := PSmallBlockType(
-    APool.AllocSize2SmallBlockTypeIndX4[(Size + (BlockHeaderSize - 1)) div SmallBlockGranularity]
+    APool.AllocSize2SmallBlockTypeIndX4[(Size + (CBlockHeaderSize - 1)) div CSmallBlockGranularity]
     * (SizeOf(TSmallBlockType) div 4)
     + NativeUInt(@APool.SmallBlockTypes));
 
   // Lock the block type
-  SpinCounter := DefaultSpinCounter;
+  SpinCounter := CDefaultSpinCounter;
   while True do
   begin
     // Try to lock the small block type
@@ -155,8 +156,8 @@ begin
     Result := LPSmallBlockPool.FirstFreeBlock;
 
     // Get the new first free block
-    LNewFirstFreeBlock := PPointer(NativeUInt(Result) - BlockHeaderSize)^;
-    LNewFirstFreeBlock := Pointer(NativeUInt(LNewFirstFreeBlock) and DropSmallFlagsMask);
+    LNewFirstFreeBlock := PPointer(NativeUInt(Result) - CBlockHeaderSize)^;
+    LNewFirstFreeBlock := Pointer(NativeUInt(LNewFirstFreeBlock) and CDropSmallFlagsMask);
 
     // Increment the number of used blocks
     Inc(LPSmallBlockPool.BlocksInUse);
@@ -215,8 +216,8 @@ begin
         LBinGroupNumber := FindFirstSetBit(LBinGroupsMasked);
 
         // Get the bin in the group with free blocks
-        //LBinNumber := FindFirstSetBit(APool.MediumBlockBinBitmaps[LBinGroupNumber]) + (LBinGroupNumber * MediumBlockBinsPerGroup);
-        LBinNumber := FindFirstSetBit(APool.MediumBlockBinBitmaps[LBinGroupNumber]) + (LBinGroupNumber shl MediumBlockBinsPerGroupShift);
+        //LBinNumber := FindFirstSetBit(APool.MediumBlockBinBitmaps[LBinGroupNumber]) + (LBinGroupNumber * CMediumBlockBinsPerGroup);
+        LBinNumber := FindFirstSetBit(APool.MediumBlockBinBitmaps[LBinGroupNumber]) + (LBinGroupNumber shl CMediumBlockBinsPerGroupShift);
         LPMediumBin := @APool.MediumBlockBins[LBinNumber];
 
         // Get the first block in the bin
@@ -244,12 +245,12 @@ begin
         end;
 
         // Get the size of the available medium block
-        LBlockSize := PNativeUInt(NativeUInt(LMediumBlock) - BlockHeaderSize)^ and ExtractMediumSizeMask;
+        LBlockSize := PNativeUInt(NativeUInt(LMediumBlock) - CBlockHeaderSize)^ and CExtractMediumSizeMask;
 
         // Medium blocks are never split or coalesced in full debug mode
 
         // Should the block be split?
-        if LBlockSize >= MaximumSmallBlockPoolSize then
+        if LBlockSize >= CMaximumSmallBlockPoolSize then
         begin
           // Get the size of the second split
           LSecondSplitSize := LBlockSize - LPSmallBlockType.OptimalBlockPoolSize;
@@ -259,12 +260,12 @@ begin
 
           // Split the block in two
           LSecondSplit := PMediumFreeBlock(NativeUInt(LMediumBlock) + LBlockSize);
-          PNativeUInt(NativeUInt(LSecondSplit) - BlockHeaderSize)^ :=
-            APool.IndexFlag or LSecondSplitSize or IsMediumBlockFlag or IsFreeBlockFlag;
+          PNativeUInt(NativeUInt(LSecondSplit) - CBlockHeaderSize)^ :=
+            APool.Index or LSecondSplitSize or CIsMediumBlockFlag or CIsFreeBlockFlag;
 
           // Store the size of the second split as the second last dword/qword
-          PNativeUInt(NativeUInt(LSecondSplit) + LSecondSplitSize - 2 * BlockHeaderSize)^ :=
-            APool.IndexFlag or LSecondSplitSize;
+          PNativeUInt(NativeUInt(LSecondSplit) + LSecondSplitSize - 2 * CBlockHeaderSize)^ :=
+            APool.Index or LSecondSplitSize;
 
           // Put the remainder in a bin (it will be big enough)
           InsertMediumBlockIntoBin(APool, LSecondSplit, LSecondSplitSize);
@@ -272,8 +273,8 @@ begin
         else
         begin
           // Mark this block as used in the block following it
-          LNextMediumBlockSizeAndFlags := PNativeUInt(NativeUInt(LMediumBlock) + LBlockSize - BlockHeaderSize);
-          LNextMediumBlockSizeAndFlags^ := LNextMediumBlockSizeAndFlags^ and (not PreviousMediumBlockIsFreeFlag);
+          LNextMediumBlockSizeAndFlags := PNativeUInt(NativeUInt(LMediumBlock) + LBlockSize - CBlockHeaderSize);
+          LNextMediumBlockSizeAndFlags^ := LNextMediumBlockSizeAndFlags^ and (not CPreviousMediumBlockIsFreeFlag);
         end;
       end
       else
@@ -283,7 +284,7 @@ begin
         if LSequentialFeedFreeSize >= LPSmallBlockType.MinimumBlockPoolSize then
         begin
           // Enough sequential feed space: Will the remainder be usable?
-          if LSequentialFeedFreeSize >= (LPSmallBlockType.OptimalBlockPoolSize + MinimumMediumBlockSize) then
+          if LSequentialFeedFreeSize >= (LPSmallBlockType.OptimalBlockPoolSize + CMinimumMediumBlockSize) then
             LBlockSize := LPSmallBlockType.OptimalBlockPoolSize
           else
             LBlockSize := LSequentialFeedFreeSize;
@@ -308,10 +309,12 @@ begin
           if LMediumBlock = nil then
           begin
             // Unlock the medium blocks
-            LockRelease(@APool.MediumBlocksLocked);
+            //LockRelease(@APool.MediumBlocksLocked);
+            APool.MediumBlocksLocked := 0;
 
             // Unlock the block type
-            LockRelease(@LPSmallBlockType.BlockTypeLocked);
+            //LockRelease(@LPSmallBlockType.BlockTypeLocked);
+            LPSmallBlockType.BlockTypeLocked := 0;
 
             // Failed
             Result := nil;
@@ -328,11 +331,12 @@ begin
       // Mark this block as in use
 
       // Set the size and flags for this block
-      PNativeUInt(NativeUInt(LMediumBlock) - BlockHeaderSize)^ :=
-        APool.IndexFlag or LBlockSize or IsMediumBlockFlag or IsSmallBlockPoolInUseFlag;
+      PNativeUInt(NativeUInt(LMediumBlock) - CBlockHeaderSize)^ :=
+        APool.Index or LBlockSize or CIsMediumBlockFlag or CIsSmallBlockPoolInUseFlag;
 
       // Unlock medium blocks
-      LockRelease(@APool.MediumBlocksLocked);
+      //LockRelease(@APool.MediumBlocksLocked);
+      APool.MediumBlocksLocked := 0;
 
       // Set up the block pool
       LPSmallBlockPool := PSmallBlockPoolHeader(LMediumBlock);
@@ -342,7 +346,7 @@ begin
 
       // Set it up for sequential block serving
       LPSmallBlockType.CurrentSequentialFeedPool := LPSmallBlockPool;
-      Result := Pointer(NativeUInt(LPSmallBlockPool) + SmallBlockPoolHeaderSize);
+      Result := Pointer(NativeUInt(LPSmallBlockPool) + CSmallBlockPoolHeaderSize);
       LPSmallBlockType.NextSequentialFeedBlockAddress :=
         Pointer(NativeUInt(Result) + LPSmallBlockType.BlockSize);
       LPSmallBlockType.MaxSequentialFeedBlockAddress :=
@@ -357,10 +361,11 @@ begin
   end;
 
   // Unlock the block type
-  LockRelease(@LPSmallBlockType.BlockTypeLocked);
+  //LockRelease(@LPSmallBlockType.BlockTypeLocked);
+  LPSmallBlockType.BlockTypeLocked := 0;
 
   // Set the block header
-  PNativeUInt(NativeUInt(Result) - BlockHeaderSize)^ := NativeUInt(LPSmallBlockPool);
+  PNativeUInt(NativeUInt(Result) - CBlockHeaderSize)^ := NativeUInt(LPSmallBlockPool);
 end;
 
 function FreeMemSmall(const P: Pointer): Integer;
@@ -376,7 +381,7 @@ begin
 {$endif}
 
   // Get a pointer to the block pool
-  LPSmallBlockPool := PSmallBlockPoolHeader(PNativeUInt(NativeUInt(P) - BlockHeaderSize)^);
+  LPSmallBlockPool := PSmallBlockPoolHeader(PNativeUInt(NativeUInt(P) - CBlockHeaderSize)^);
 
   // Get the block type
   LPSmallBlockType := LPSmallBlockPool.BlockType;
@@ -404,7 +409,7 @@ begin
   end;
 
   // Store the old first free block
-  PNativeUInt(NativeUInt(P) - BlockHeaderSize)^ := NativeUInt(LOldFirstFreeBlock) or IsFreeBlockFlag;
+  PNativeUInt(NativeUInt(P) - CBlockHeaderSize)^ := NativeUInt(LOldFirstFreeBlock) or CIsFreeBlockFlag;
 
   // Store this as the new first free block
   LPSmallBlockPool.FirstFreeBlock := P;
@@ -428,25 +433,27 @@ begin
       LPSmallBlockType.MaxSequentialFeedBlockAddress := nil;
 
     // Unlock this block type
-    LockRelease(@LPSmallBlockType.BlockTypeLocked);
+    //LockRelease(@LPSmallBlockType.BlockTypeLocked);
+    LPSmallBlockType.BlockTypeLocked := 0;
 
     // No longer a small block pool in use (the flag must be reset in the
     // pascal version, since IsSmallBlockPoolInUseFlag = IsLargeBlockFlag)
     // Can skip this setting if calling FreeMemMedium without checking the flag
-    //PNativeUInt(NativeUInt(LPSmallBlockPool) - BlockHeaderSize)^ :=
-    //  PNativeUInt(NativeUInt(LPSmallBlockPool) - BlockHeaderSize)^ and (not IsSmallBlockPoolInUseFlag);
+    PNativeUInt(NativeUInt(LPSmallBlockPool) - CBlockHeaderSize)^ :=
+      PNativeUInt(NativeUInt(LPSmallBlockPool) - CBlockHeaderSize)^ and (not CIsSmallBlockPoolInUseFlag);
 
     // Release this pool
-    //FFreeMem(LPSmallBlockPool);
-    Result := FreeMemMedium(LPSmallBlockPool);
+    Result := FFreeMem(LPSmallBlockPool);
+    //Result := FreeMemMedium(LPSmallBlockPool);
   end
   else
   begin
     // Unlock this block type
-    LockRelease(@LPSmallBlockType.BlockTypeLocked);
+    //LockRelease(@LPSmallBlockType.BlockTypeLocked);
+    LPSmallBlockType.BlockTypeLocked := 0;
 
     // No error
-    Result := ResultOK;
+    Result := CResultOK;
   end;
 end;
 
@@ -460,13 +467,13 @@ begin
   Assert(P <> nil);
 
   // Get a pointer to the block pool
-  LPSmallBlockPool := PSmallBlockPoolHeader(PNativeUInt(NativeUInt(P) - BlockHeaderSize)^);
+  LPSmallBlockPool := PSmallBlockPoolHeader(PNativeUInt(NativeUInt(P) - CBlockHeaderSize)^);
 
   // Get the block type
   LPSmallBlockType := LPSmallBlockPool.BlockType;
 
   // Get the available size inside blocks of this type.
-  LOldAvailableSize := LPSmallBlockType.BlockSize - BlockHeaderSize;
+  LOldAvailableSize := LPSmallBlockType.BlockSize - CBlockHeaderSize;
 
 {$ifdef F4mDebugManager}
   if not IsMemoryUsed(@ThreadPools[0], P) then
@@ -483,14 +490,14 @@ begin
     // future move operations.
 
     // Must grow with at least 100% + x bytes
-    LNewAllocSize := (LOldAvailableSize shl 1) + SmallBlockUpsizeAdder;
+    LNewAllocSize := (LOldAvailableSize shl 1) + CSmallBlockUpsizeAdder;
 
     // Still not large enough?
     if LNewAllocSize < Size then
       LNewAllocSize := Size;
 {$else}
     // Need round up for the special move
-    LNewAllocSize := (Size + (MinimumBlockAlignment - 1)) and -MinimumBlockAlignment;
+    LNewAllocSize := (Size + (CMinimumBlockAlignment - 1)) and -CMinimumBlockAlignment;
 {$endif}
 
     // Allocate the new block
@@ -500,7 +507,7 @@ begin
     if Result <> nil then
     begin
       Assert(Result <> P);
-      Assert((PNativeUInt(NativeUInt(Result) - BlockHeaderSize)^ and IsFreeBlockFlag) = 0);
+      Assert((PNativeUInt(NativeUInt(Result) - CBlockHeaderSize)^ and CIsFreeBlockFlag) = 0);
 
       // Move the data across
 {$ifdef F4mUseCustomFixedSizeMoveRoutines}
@@ -518,7 +525,7 @@ begin
     // Must be less than half the current size + SmallBlockDownsizeCheckAdder or we
     // don't bother resizing.
 {$ifdef F4mReallocUpsize}
-    if (Size + SmallBlockDownsizeCheckAdder) > (LOldAvailableSize shr 1) then
+    if (Size + CSmallBlockDownsizeCheckAdder) > (LOldAvailableSize shr 1) then
     begin
       Result := P;
       Exit;
@@ -532,7 +539,7 @@ begin
 {$endif}
 
     // Need round up for the special move
-    LNewAllocSize := (Size + (MinimumBlockAlignment - 1)) and -MinimumBlockAlignment;
+    LNewAllocSize := (Size + (CMinimumBlockAlignment - 1)) and -CMinimumBlockAlignment;
 
     // Allocate a smaller block
     Result := FGetMem(LNewAllocSize);
@@ -541,7 +548,7 @@ begin
     if Result <> nil then
     begin
       Assert(Result <> P);
-      Assert((PNativeUInt(NativeUInt(Result) - BlockHeaderSize)^ and IsFreeBlockFlag) = 0);
+      Assert((PNativeUInt(NativeUInt(Result) - CBlockHeaderSize)^ and CIsFreeBlockFlag) = 0);
 
       // Move the data across
 {$ifdef F4mUseCustomVariableSizeMoveRoutines}
@@ -562,7 +569,7 @@ begin
 end;
 
 procedure FreeAllMemorySmall;
-  procedure FreeAllMemorySmallPool(APool: PThreadPool);
+  procedure FreeAllMemorySmallPool(const APool: PThreadPool);
   var
     J: Int32;
   begin
@@ -582,7 +589,7 @@ begin
 end;
 
 procedure InitializeMemorySmall;
-  procedure BuildBlockTypeLookupTablesPool(APool: PThreadPool);
+  procedure BuildBlockTypeLookupTablesPool(const APool: PThreadPool);
   var
     LStartIndex, LNextStartIndex: UInt32;
     J: Int32;
@@ -594,9 +601,9 @@ procedure InitializeMemorySmall;
       APool.SmallBlockTypes[J].BlockSize := CSmallBlockSizes[J].BlockSize;
       
       // Is this a valid block type for the alignment restriction?
-      if (MinimumBlockAlignment = 8) or ((APool.SmallBlockTypes[J].BlockSize and 15) = 0) then
+      if (CMinimumBlockAlignment = 8) or ((APool.SmallBlockTypes[J].BlockSize and 15) = 0) then
       begin
-        LNextStartIndex := APool.SmallBlockTypes[J].BlockSize div SmallBlockGranularity;
+        LNextStartIndex := APool.SmallBlockTypes[J].BlockSize div CSmallBlockGranularity;
 
         // Store the block type index * 4 in the appropriate slots.
         LBlockTypeVal := J * 4;
@@ -612,7 +619,7 @@ procedure InitializeMemorySmall;
     end;
   end;
 
-  procedure InitializeMemorySmallPool(APool: PThreadPool);
+  procedure InitializeMemorySmallPool(const APool: PThreadPool);
   var
     LMinimumPoolSize, LOptimalPoolSize, LGroupNumber, LBlocksPerPool: UInt32;
     J: Int32;
@@ -645,15 +652,15 @@ procedure InitializeMemorySmall;
 
       // Get the mask to use for finding a medium block suitable for a block pool
       LMinimumPoolSize :=
-        ((APool.SmallBlockTypes[J].BlockSize * MinimumSmallBlocksPerPool
-          + (SmallBlockPoolHeaderSize + MediumBlockGranularity - 1 - MediumBlockSizeOffset))
-        and -MediumBlockGranularity) + MediumBlockSizeOffset;
-      if LMinimumPoolSize < MinimumMediumBlockSize then
-        LMinimumPoolSize := MinimumMediumBlockSize;
+        ((APool.SmallBlockTypes[J].BlockSize * CMinimumSmallBlocksPerPool
+          + (CSmallBlockPoolHeaderSize + CMediumBlockGranularity - 1 - CMediumBlockSizeOffset))
+        and -CMediumBlockGranularity) + CMediumBlockSizeOffset;
+      if LMinimumPoolSize < CMinimumMediumBlockSize then
+        LMinimumPoolSize := CMinimumMediumBlockSize;
 
-      // Get the closest group number for the minimum pool size
-      LGroupNumber := (LMinimumPoolSize + (- MinimumMediumBlockSize + MediumBlockBinsPerGroup * MediumBlockGranularity div 2))
-        div (MediumBlockBinsPerGroup * MediumBlockGranularity);
+      // Get the closest group number for the minimum pool size - todo check for expression
+      LGroupNumber := (LMinimumPoolSize + (- CMinimumMediumBlockSize + CMediumBlockBinsPerGroup * CMediumBlockGranularity div 2))
+        div (CMediumBlockBinsPerGroup * CMediumBlockGranularity);
 
       // Too large?
       if LGroupNumber > 7 then
@@ -663,27 +670,27 @@ procedure InitializeMemorySmall;
       APool.SmallBlockTypes[J].AllowedGroupsForBlockPoolBitmap := Byte(Byte(-1) shl LGroupNumber);
 
       // Set the minimum pool size
-      APool.SmallBlockTypes[J].MinimumBlockPoolSize := MinimumMediumBlockSize + LGroupNumber *
-        (MediumBlockBinsPerGroup * MediumBlockGranularity);
+      APool.SmallBlockTypes[J].MinimumBlockPoolSize := CMinimumMediumBlockSize + LGroupNumber *
+        (CMediumBlockBinsPerGroup * CMediumBlockGranularity);
 
       // Get the optimal block pool size
-      LOptimalPoolSize := ((APool.SmallBlockTypes[J].BlockSize * TargetSmallBlocksPerPool
-          + (SmallBlockPoolHeaderSize + MediumBlockGranularity - 1 - MediumBlockSizeOffset))
-        and -MediumBlockGranularity) + MediumBlockSizeOffset;
+      LOptimalPoolSize := ((APool.SmallBlockTypes[J].BlockSize * CTargetSmallBlocksPerPool
+          + (CSmallBlockPoolHeaderSize + CMediumBlockGranularity - 1 - CMediumBlockSizeOffset))
+        and -CMediumBlockGranularity) + CMediumBlockSizeOffset;
 
       // Limit the optimal pool size to within range
-      if LOptimalPoolSize < OptimalSmallBlockPoolSizeLowerLimit then
-        LOptimalPoolSize := OptimalSmallBlockPoolSizeLowerLimit;
-      if LOptimalPoolSize > OptimalSmallBlockPoolSizeUpperLimit then
-        LOptimalPoolSize := OptimalSmallBlockPoolSizeUpperLimit;
+      if LOptimalPoolSize < COptimalSmallBlockPoolSizeLowerLimit then
+        LOptimalPoolSize := COptimalSmallBlockPoolSizeLowerLimit;
+      if LOptimalPoolSize > COptimalSmallBlockPoolSizeUpperLimit then
+        LOptimalPoolSize := COptimalSmallBlockPoolSizeUpperLimit;
 
       // How many blocks will fit in the adjusted optimal size?
-      LBlocksPerPool := (LOptimalPoolSize - SmallBlockPoolHeaderSize) div APool.SmallBlockTypes[J].BlockSize;
+      LBlocksPerPool := (LOptimalPoolSize - CSmallBlockPoolHeaderSize) div APool.SmallBlockTypes[J].BlockSize;
 
       // Recalculate the optimal pool size to minimize wastage due to a partial last block.
       APool.SmallBlockTypes[J].OptimalBlockPoolSize :=
-        ((LBlocksPerPool * APool.SmallBlockTypes[J].BlockSize + (SmallBlockPoolHeaderSize + MediumBlockGranularity - 1 - MediumBlockSizeOffset))
-          and -MediumBlockGranularity) + MediumBlockSizeOffset;
+        ((LBlocksPerPool * APool.SmallBlockTypes[J].BlockSize + (CSmallBlockPoolHeaderSize + CMediumBlockGranularity - 1 - CMediumBlockSizeOffset))
+          and -CMediumBlockGranularity) + CMediumBlockSizeOffset;
     end;
   end;
 

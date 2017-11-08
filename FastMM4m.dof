@@ -140,8 +140,8 @@ C:\Development\Borland\Delphi7\Bin\Bpl\CrossKylix.bpl=CrossKylix IDE Plugin
 C:\Development\Borland\Delphi7\bin\dclcrdbx70.bpl=Core Lab dbx components
 [HistoryLists\hlConditionals]
 Count=3
-Item0=F4mDLL
-Item1=F4mTestManager
+Item0=F4mTestManager
+Item1=F4mDLL
 Item2=DLL
 [HistoryLists\hlUnitAliases]
 Count=1
@@ -156,8 +156,8 @@ Count=1
 Item0=Lib
 [HistoryLists\hlOutputDirectorry]
 Count=2
-Item0=F:\Delphi\Projects\Utility\Lib
-Item1=Lib
+Item0=Lib
+Item1=F:\Delphi\Projects\Utility\Lib
 [HistoryLists\hlBPLOutput]
 Count=1
 Item0=Lib

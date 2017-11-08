@@ -97,8 +97,7 @@ begin
   LProcessID := GetCurrentProcessId;
   for I := 0 to 7 do
   begin
-    MappingObjectName[(High(MappingObjectName) - 1) - I] :=
-      HexTable[((LProcessID shr (I * 4)) and $F)];
+    MappingObjectName[(High(MappingObjectName) - 1) - I] := CHexTable[((LProcessID shr (I * 4)) and $F)];
   end;
 end;
 

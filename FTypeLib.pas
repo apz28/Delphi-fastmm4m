@@ -53,10 +53,12 @@ interface
 {$include FOption.inc}
 
 const
-  ResultOK = 0;
-  ResultError = -1;
+  CResultOK = 0;
+  CResultError = -1;
 
-  NumSmallBlockTypes = {$ifdef F4mAlign16Bytes}46{$else}55{$endif};
+  CDefaultSpinCounter = 400;
+
+  CNumSmallBlockTypes = {$ifdef F4mAlign16Bytes}46{$else}55{$endif};
 
 type
 {$if CompilerVersion <= 15} // Delphi 7
@@ -76,50 +78,65 @@ type
   TMemoryManagerEx = System.TMemoryManager;
 {$ifend}
 
+  TThreadId = UInt32;
+
   TSharedMemory = (smOK, smAlreadySet, smAlreadyShared, smAlreadyUsed, smFailed);
 
   // Memory map
   TChunkStatus = (csUnallocated, csAllocated, csReserved, csSysAllocated, csSysReserved);
-  
+
+  PMemoryMap = ^TMemoryMap;
   TMemoryMap = array[0..65535] of TChunkStatus;
 
+  PSmallBlockTypeState = ^TSmallBlockTypeState;
   TSmallBlockTypeState = packed record
+    // The number of allocated blocks
+    AllocatedBlockCount: NativeUInt;
+
+    // The total address space reserved for this block type (both allocated and free blocks)
+    ReservedAddressSpace: NativeUInt;
+
     // The internal size of the block type
     InternalBlockSize: UInt32;
 
     // Useable block size: The number of non-reserved bytes inside the block.
     UseableBlockSize: UInt32;
-
-    // The number of allocated blocks
-    AllocatedBlockCount: NativeUInt;
-    
-    // The total address space reserved for this block type (both allocated and free blocks)
-    ReservedAddressSpace: NativeUInt;
   end;
-  
-  TSmallBlockTypeStates = array[0..NumSmallBlockTypes - 1] of TSmallBlockTypeState;
 
+  PSmallBlockTypeStates = ^TSmallBlockTypeStates;
+  TSmallBlockTypeStates = array[0..CNumSmallBlockTypes - 1] of TSmallBlockTypeState;
+
+  PMemoryManagerState = ^TMemoryManagerState;
   TMemoryManagerState = packed record
     // Small block type states
     SmallBlockTypeStates: TSmallBlockTypeStates;
 
     // Medium block stats
-    AllocatedMediumBlockCount: UInt32;
+    AllocatedMediumBlockCount: NativeUInt;
     TotalAllocatedMediumBlockSize: NativeUInt;
     ReservedMediumBlockAddressSpace: NativeUInt;
 
     // Large block stats
-    AllocatedLargeBlockCount: UInt32;
+    AllocatedLargeBlockCount: NativeUInt;
     TotalAllocatedLargeBlockSize: NativeUInt;
     ReservedLargeBlockAddressSpace: NativeUInt;
   end;
 
+  PStatisticCalls = ^TStatisticCalls;
   TStatisticCalls = packed record
-    ThreadYieldCount: NativeUInt;
     OSAllocCount: NativeUInt;
+    OSAllocExtCount: NativeUInt;
     OSAllocFailCount: NativeUInt;
     OSFreeCount: NativeUInt;
+    OSFreeFailCount: NativeUInt;
+    PoolCollision: NativeUInt;
+    ThreadYieldCount: NativeUInt;
   end;
+
+{$ifdef F4mStatisticInfo}
+var
+  StatisticCalls: TStatisticCalls;
+{$endif}
 
 implementation
 

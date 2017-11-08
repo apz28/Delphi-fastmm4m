@@ -26,12 +26,8 @@ uses
   FMemoryLarge in 'FMemoryLarge.pas',
   FMemoryMedium in 'FMemoryMedium.pas',
   FMemorySmall in 'FMemorySmall.pas',
-{$ifdef F4mDebugManager}
   FDebug in 'FDebug.pas',
-{$endif}
-{$ifdef F4mIncludeMemoryLeakTrackingCode}
   FTrackLeak in 'FTrackLeak.pas',
-{$endif}
   FState in 'FState.pas';
 
 {$R *.res}
@@ -74,6 +70,7 @@ exports
   AllocMem,
   RegisterExpectedMemoryLeak,
   UnregisterExpectedMemoryLeak,
+  
   // delphi calling convention
   FGetMem,
   FFreeMem,
@@ -100,16 +97,9 @@ begin
     SaveDLLProc(AReason);
 
   if AReason = DLL_THREAD_DETACH then
-  begin
-    FFinalizeThreadPool;
-  end
+    FFinalizeThreadPool
   else if AReason = DLL_PROCESS_DETACH then
-  begin
-    Inc(Shutdown);
-    FFinalizeThreadPool;
     FFinalizeMemoryManager;
-    Dec(Shutdown);
-  end;
 end;
 
 begin

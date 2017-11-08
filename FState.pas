@@ -56,11 +56,11 @@ uses
   FTypeLib, FType, FUtil; // System
 
 // Returns statistics about the current state of the memory manager
-procedure FGetMemoryManagerState(out AMemoryManagerState: TMemoryManagerState);
+procedure FGetMemoryManagerState(out MemoryManagerState: TMemoryManagerState);
 
 // Gets the state of every 64K block in the 4GB address space for 32-bit, and the
 // low 4GB of the address space under 64-bit.
-procedure FGetMemoryMap(out AMemoryMap: TMemoryMap);
+procedure FGetMemoryMap(out MemoryMap: TMemoryMap);
 
 // Returns summarised information about the state of the memory manager.
 function FGetHeapStatus: THeapStatus;
@@ -72,8 +72,8 @@ uses
   FVirtual, FMemory, FMemorySmall;
 
 // Returns statistics about the current state of the memory manager
-procedure FGetMemoryManagerState(out AMemoryManagerState: TMemoryManagerState);
-  procedure GetMemoryManagerStatePool(APool: PThreadPool);
+procedure FGetMemoryManagerState(out MemoryManagerState: TMemoryManagerState);
+  procedure GetMemoryManagerStatePool(const APool: PThreadPool);
   var
     LPMediumBlockPoolHeader: PMediumBlockPoolHeader;
     LPMediumBlock: Pointer;
@@ -92,37 +92,37 @@ procedure FGetMemoryManagerState(out AMemoryManagerState: TMemoryManagerState);
     while LPMediumBlockPoolHeader <> @APool.MediumBlockPoolsCircularList do
     begin
       // Add to the medium block used space
-      Inc(AMemoryManagerState.ReservedMediumBlockAddressSpace, MediumBlockPoolSize);
+      Inc(MemoryManagerState.ReservedMediumBlockAddressSpace, CMediumBlockPoolSize);
       LPMediumBlock := GetFirstMediumBlockInPool(APool, LPMediumBlockPoolHeader);
       while LPMediumBlock <> nil do
       begin
-        LBlockSizeAndFlags := PNativeUInt(NativeUInt(LPMediumBlock) - BlockHeaderSize)^;
+        LBlockSizeAndFlags := PNativeUInt(NativeUInt(LPMediumBlock) - CBlockHeaderSize)^;
 
         // Is the block in use?
-        if LBlockSizeAndFlags and IsFreeBlockFlag = 0 then
+        if LBlockSizeAndFlags and CIsFreeBlockFlag = 0 then
         begin
           // Get the block size
-          LBlockSize := LBlockSizeAndFlags and ExtractMediumSizeMask;
-          if (LBlockSizeAndFlags and IsSmallBlockPoolInUseFlag) <> 0 then
+          LBlockSize := LBlockSizeAndFlags and CExtractMediumSizeMask;
+          if (LBlockSizeAndFlags and CIsSmallBlockPoolInUseFlag) <> 0 then
           begin
             // Get the block type index
             LBlockTypeIndex := (NativeUInt(PSmallBlockPoolHeader(LPMediumBlock).BlockType)
               - NativeUInt(@APool.SmallBlockTypes[0])) div SizeOf(TSmallBlockType);
 
             // Subtract from medium block usage
-            Dec(AMemoryManagerState.ReservedMediumBlockAddressSpace, LBlockSize);
+            Dec(MemoryManagerState.ReservedMediumBlockAddressSpace, LBlockSize);
 
             // Add it to the reserved space for the block size
-            Inc(AMemoryManagerState.SmallBlockTypeStates[LBlockTypeIndex].ReservedAddressSpace, LBlockSize);
+            Inc(MemoryManagerState.SmallBlockTypeStates[LBlockTypeIndex].ReservedAddressSpace, LBlockSize);
 
             // Add the usage for the pool
-            Inc(AMemoryManagerState.SmallBlockTypeStates[LBlockTypeIndex].AllocatedBlockCount,
+            Inc(MemoryManagerState.SmallBlockTypeStates[LBlockTypeIndex].AllocatedBlockCount,
               PSmallBlockPoolHeader(LPMediumBlock).BlocksInUse);
           end
           else
           begin
-            Inc(AMemoryManagerState.AllocatedMediumBlockCount);
-            Inc(AMemoryManagerState.TotalAllocatedMediumBlockSize, LBlockSize - BlockHeaderSize);
+            Inc(MemoryManagerState.AllocatedMediumBlockCount);
+            Inc(MemoryManagerState.TotalAllocatedMediumBlockSize, LBlockSize - CBlockHeaderSize);
           end;
         end;
 
@@ -135,7 +135,8 @@ procedure FGetMemoryManagerState(out AMemoryManagerState: TMemoryManagerState);
     end;
 
     // Unlock medium blocks
-    LockRelease(@APool.MediumBlocksLocked);
+    //LockRelease(@APool.MediumBlocksLocked);
+    APool.MediumBlocksLocked := 0;
 
     // Unlock all the small block types
     UnlockAllSmallBlockTypes(APool);
@@ -146,30 +147,31 @@ procedure FGetMemoryManagerState(out AMemoryManagerState: TMemoryManagerState);
     LPLargeBlock := APool.LargeBlocksCircularList.NextLargeBlockHeader;
     while LPLargeBlock <> @APool.LargeBlocksCircularList do
     begin
-      LBlockSize := LPLargeBlock.BlockSizeAndFlags and ExtractLargeSizeMask;
-      Inc(AMemoryManagerState.AllocatedLargeBlockCount);
-      Inc(AMemoryManagerState.ReservedLargeBlockAddressSpace, LBlockSize);
-      Inc(AMemoryManagerState.TotalAllocatedLargeBlockSize, LPLargeBlock.UserAllocatedSize);
+      LBlockSize := LPLargeBlock.BlockSizeAndFlags and CExtractLargeSizeMask;
+      Inc(MemoryManagerState.AllocatedLargeBlockCount);
+      Inc(MemoryManagerState.ReservedLargeBlockAddressSpace, LBlockSize);
+      Inc(MemoryManagerState.TotalAllocatedLargeBlockSize, LPLargeBlock.UserAllocatedSize);
 
       // Get the next large block
       LPLargeBlock := LPLargeBlock.NextLargeBlockHeader;
     end;
 
-    LockRelease(@APool.LargeBlocksLocked);
+    //LockRelease(@APool.LargeBlocksLocked);
+    APool.LargeBlocksLocked := 0;
   end;
 var
   I: Int32;
 begin
   // Clear the results
-  FillChar(AMemoryManagerState, SizeOf(AMemoryManagerState), 0);
+  FillChar(MemoryManagerState, SizeOf(MemoryManagerState), 0);
 
   // Set the small block size stats
-  for I := 0 to (NumSmallBlockTypes - 1) do
+  for I := 0 to (CNumSmallBlockTypes - 1) do
   begin
-    AMemoryManagerState.SmallBlockTypeStates[I].InternalBlockSize := CSmallBlockSizes[I].BlockSize;
-    AMemoryManagerState.SmallBlockTypeStates[I].UseableBlockSize := CSmallBlockSizes[I].BlockSize - BlockHeaderSize;
-    if Int32(AMemoryManagerState.SmallBlockTypeStates[I].UseableBlockSize) < 0 then
-      AMemoryManagerState.SmallBlockTypeStates[I].UseableBlockSize := 0;
+    MemoryManagerState.SmallBlockTypeStates[I].InternalBlockSize := CSmallBlockSizes[I].BlockSize;
+    MemoryManagerState.SmallBlockTypeStates[I].UseableBlockSize := CSmallBlockSizes[I].BlockSize - CBlockHeaderSize;
+    if Int32(MemoryManagerState.SmallBlockTypeStates[I].UseableBlockSize) < 0 then
+      MemoryManagerState.SmallBlockTypeStates[I].UseableBlockSize := 0;
   end;
 
   for I := 0 to High(ThreadPools) do
@@ -179,8 +181,8 @@ end;
 
 // Gets the state of every 64K block in the 4GB address space for 32-bit, and the
 // low 4GB of the address space under 64-bit.
-procedure FGetMemoryMap(out AMemoryMap: TMemoryMap);
-  procedure GetMemoryMapPool(APool: PThreadPool);
+procedure FGetMemoryMap(out MemoryMap: TMemoryMap);
+  procedure GetMemoryMapPool(const APool: PThreadPool);
   var
     LPMediumBlockPoolHeader: PMediumBlockPoolHeader;
     LPLargeBlock: PLargeBlockHeader;
@@ -195,18 +197,19 @@ procedure FGetMemoryMap(out AMemoryMap: TMemoryMap);
     begin
       // Add to the medium block used space
       LChunkIndex := NativeUInt(LPMediumBlockPoolHeader) shr 16;
-      for LInd := LChunkIndex to (LChunkIndex + (MediumBlockPoolSize - 1) shr 16) do
+      for LInd := LChunkIndex to (LChunkIndex + (CMediumBlockPoolSize - 1) shr 16) do
       begin
-        if LChunkIndex > High(AMemoryMap) then
+        if LChunkIndex > High(MemoryMap) then
           Break;
-        AMemoryMap[LInd] := csAllocated;
+        MemoryMap[LInd] := csAllocated;
       end;
 
       // Get the next medium block pool
       LPMediumBlockPoolHeader := LPMediumBlockPoolHeader.NextMediumBlockPoolHeader;
     end;
 
-    LockRelease(@APool.MediumBlocksLocked);
+    //LockRelease(@APool.MediumBlocksLocked);
+    APool.MediumBlocksLocked := 0;
 
     // Step through all the large blocks
     LockAcquire(@APool.LargeBlocksLocked);
@@ -215,19 +218,20 @@ procedure FGetMemoryMap(out AMemoryMap: TMemoryMap);
     while LPLargeBlock <> @APool.LargeBlocksCircularList do
     begin
       LChunkIndex := NativeUInt(LPLargeBlock) shr 16;
-      LBlockSize := LPLargeBlock.BlockSizeAndFlags and ExtractLargeSizeMask;
+      LBlockSize := LPLargeBlock.BlockSizeAndFlags and CExtractLargeSizeMask;
       for LInd := LChunkIndex to (LChunkIndex + (LBlockSize - 1) shr 16) do
       begin
-        if LChunkIndex > High(AMemoryMap) then
+        if LChunkIndex > High(MemoryMap) then
           Break;
-        AMemoryMap[LInd] := csAllocated;
+        MemoryMap[LInd] := csAllocated;
       end;
 
       // Get the next large block
       LPLargeBlock := LPLargeBlock.NextLargeBlockHeader;
     end;
 
-    LockRelease(@APool.LargeBlocksLocked);
+    //LockRelease(@APool.LargeBlocksLocked);
+    APool.LargeBlocksLocked := 0;
   end;
 
 var
@@ -236,7 +240,7 @@ var
   I: Int32;
 begin
   // Clear the map
-  FillChar(AMemoryMap, SizeOf(AMemoryMap), Ord(csUnallocated));
+  FillChar(MemoryMap, SizeOf(MemoryMap), Ord(csUnallocated));
 
   for I := 0 to High(ThreadPools) do
     GetMemoryMapPool(@ThreadPools[I]);
@@ -245,17 +249,17 @@ begin
   for I := 0 to High(TMemoryMap) do
   begin
     // If the chunk is not allocated by this Memory Manager, what is its status?
-    if AMemoryMap[I] = csUnallocated then
+    if MemoryMap[I] = csUnallocated then
     begin
       // Get all the reserved memory blocks and allocated memory blocks, etc.
-      AMemoryMap[I] := OSQuery(Pointer(I * 65536), MemSegmentSize, MemSegmentBase);
+      MemoryMap[I] := OSQuery(Pointer(I * 65536), MemSegmentSize, MemSegmentBase);
     end;
   end;
 end;
 
 // Returns summarised information about the state of the memory manager.
 function FGetHeapStatus: THeapStatus;
-  procedure GetHeapStatusPool(APool: PThreadPool; var Status: THeapStatus);
+  procedure GetHeapStatusPool(const APool: PThreadPool; var Status: THeapStatus);
   var
     LPMediumBlockPoolHeader: PMediumBlockPoolHeader;
     LPMediumBlock: Pointer;
@@ -274,27 +278,27 @@ function FGetHeapStatus: THeapStatus;
     while LPMediumBlockPoolHeader <> @APool.MediumBlockPoolsCircularList do
     begin
       // Add to the total and committed address space
-      Inc(Status.TotalAddrSpace, ((MediumBlockPoolSize + $ffff) and $ffff0000));
-      Inc(Status.TotalCommitted, ((MediumBlockPoolSize + $ffff) and $ffff0000));
+      Inc(Status.TotalAddrSpace, ((CMediumBlockPoolSize + $ffff) and $ffff0000));
+      Inc(Status.TotalCommitted, ((CMediumBlockPoolSize + $ffff) and $ffff0000));
 
       // Add the medium block pool overhead
-      Inc(Status.Overhead, (((MediumBlockPoolSize + $ffff) and $ffff0000)
-        - MediumBlockPoolSize + MediumBlockPoolHeaderSize));
+      Inc(Status.Overhead, (((CMediumBlockPoolSize + $ffff) and $ffff0000)
+        - CMediumBlockPoolSize + CMediumBlockPoolHeaderSize));
 
       // Get the first medium block in the pool
       LPMediumBlock := GetFirstMediumBlockInPool(APool, LPMediumBlockPoolHeader);
       while LPMediumBlock <> nil do
       begin
         // Get the block header
-        LBlockSizeAndFlags := PNativeUInt(NativeUInt(LPMediumBlock) - BlockHeaderSize)^;
+        LBlockSizeAndFlags := PNativeUInt(NativeUInt(LPMediumBlock) - CBlockHeaderSize)^;
 
         // Get the block size
-        LBlockSize := LBlockSizeAndFlags and ExtractMediumSizeMask;
+        LBlockSize := LBlockSizeAndFlags and CExtractMediumSizeMask;
 
         // Is the block in use?
-        if (LBlockSizeAndFlags and IsFreeBlockFlag) = 0 then
+        if (LBlockSizeAndFlags and CIsFreeBlockFlag) = 0 then
         begin
-          if (LBlockSizeAndFlags and IsSmallBlockPoolInUseFlag) <> 0 then
+          if (LBlockSizeAndFlags and CIsSmallBlockPoolInUseFlag) <> 0 then
           begin
             // Get the block type index
             LBlockTypeIndex := (NativeUInt(PSmallBlockPoolHeader(LPMediumBlock).BlockType)
@@ -306,18 +310,18 @@ function FGetHeapStatus: THeapStatus;
 
             // Get the total overhead for all the small blocks
             LSmallBlockOverhead := PSmallBlockPoolHeader(LPMediumBlock).BlocksInUse
-              * BlockHeaderSize;
+              * CBlockHeaderSize;
 
             // Add to the totals
-            Inc(Status.FreeSmall, LBlockSize - LSmallBlockUsage - BlockHeaderSize);
-            Inc(Status.Overhead, LSmallBlockOverhead + BlockHeaderSize);
+            Inc(Status.FreeSmall, LBlockSize - LSmallBlockUsage - CBlockHeaderSize);
+            Inc(Status.Overhead, LSmallBlockOverhead + CBlockHeaderSize);
             Inc(Status.TotalAllocated, LSmallBlockUsage - LSmallBlockOverhead);
           end
           else
           begin
             // Add to the result
-            Inc(Status.TotalAllocated, LBlockSize - BlockHeaderSize);
-            Inc(Status.Overhead, BlockHeaderSize);
+            Inc(Status.TotalAllocated, LBlockSize - CBlockHeaderSize);
+            Inc(Status.Overhead, CBlockHeaderSize);
           end;
         end
         else
@@ -338,7 +342,8 @@ function FGetHeapStatus: THeapStatus;
     Inc(Status.Unused, APool.MediumSequentialFeedBytesLeft);
 
     // Unlock the medium blocks
-    LockRelease(@APool.MediumBlocksLocked);
+    //LockRelease(@APool.MediumBlocksLocked);
+    APool.MediumBlocksLocked := 0;
 
     // Unlock all the small block types
     UnlockAllSmallBlockTypes(APool);
@@ -349,7 +354,7 @@ function FGetHeapStatus: THeapStatus;
     LPLargeBlock := APool.LargeBlocksCircularList.NextLargeBlockHeader;
     while (LPLargeBlock <> @APool.LargeBlocksCircularList) do
     begin
-      LBlockSize := LPLargeBlock.BlockSizeAndFlags and ExtractLargeSizeMask;
+      LBlockSize := LPLargeBlock.BlockSizeAndFlags and CExtractLargeSizeMask;
       Inc(Status.TotalAddrSpace, LBlockSize);
       Inc(Status.TotalCommitted, LBlockSize);
       Inc(Status.TotalAllocated, LPLargeBlock.UserAllocatedSize);
@@ -359,7 +364,8 @@ function FGetHeapStatus: THeapStatus;
       LPLargeBlock := LPLargeBlock.NextLargeBlockHeader;
     end;
 
-    LockRelease(@APool.LargeBlocksLocked);
+    //LockRelease(@APool.LargeBlocksLocked);
+    APool.LargeBlocksLocked := 0;
   end;
 
 var

@@ -177,16 +177,15 @@ function FFreeMem(P: Pointer): Integer;
 function FReallocMem(P: Pointer; Size: NativeInt): Pointer;
 function FAllocMem(Size: NativeInt): Pointer;
 
-function FGetMemPool(const APool: PThreadPool; const ASize: NativeUInt): Pointer;
-
 function FRegisterExpectedMemoryLeak(P: Pointer): Boolean;
 function FUnregisterExpectedMemoryLeak(P: Pointer): Boolean;
-procedure FScanForMemoryLeaks;
 
-procedure FFinalizeMemoryManager;
+{----------------------Supported Memory Manager Functions----------------------}
 
+function FGetMemPool(const APool: PThreadPool; const ASize: NativeUInt): Pointer;
 function FGetOSAllocCachedCount: UInt32;
-
+procedure FScanForMemoryLeaks;
+procedure FFinalizeMemoryManager;
 
 {-------------------------Medium Block Management-------------------------}
 
@@ -210,7 +209,8 @@ procedure GetFirstAndLastSmallBlockInPool(const APSmallBlockPool: PSmallBlockPoo
 
 // Gets the first medium block in the medium block pool
 // Medium blocks must be locked.
-function GetFirstMediumBlockInPool(const APool: PThreadPool; const APMediumBlockPoolHeader: PMediumBlockPoolHeader): Pointer;
+function GetFirstMediumBlockInPool(const APool: PThreadPool;
+  const APMediumBlockPoolHeader: PMediumBlockPoolHeader): Pointer;
 
 // Inserts a medium block into the appropriate medium block bin.
 // Medium blocks must be locked.
@@ -261,7 +261,6 @@ uses
 {$ifdef F4mInstallMemoryManager}
 var
   OldMemoryManager: TMemoryManagerEx;
-  SharedMemory, UseSharedMemory: TSharedMemory:
   IsMemoryFManagerSet: Boolean;
 {$endif}
 
@@ -819,8 +818,7 @@ begin
   GetMemoryManager(OldMemoryManager);
 
 {$ifdef F4mUseSharedMemoryManager}
-  UseSharedMemory := FAttemptToUseSharedMemoryManager;
-  if UseSharedMemory = smOK then
+  if FAttemptToUseSharedMemoryManager = smOK then
     Exit;
 {$endif}
 
@@ -828,7 +826,7 @@ begin
   IsMemoryFManagerSet := True;
   
 {$ifdef F4mShareMemoryManager}
-  SharedMemory := FShareMemoryManager;
+  FShareMemoryManager;
 {$endif}
 end;
 {$endif}

@@ -1,5 +1,5 @@
 # FastMM4m
-A fast memory manager for Delphi (Enhance FastMM4 for multi-threads - MultiCore CPUs)
+A fast memory manager for Delphi or Pascal (Enhance FastMM4 for multi-threads - MultiCore CPUs)
 
 ## Description:
 A fast replacement memory manager for Embarcadero Delphi applications that scales well under multi-threaded usage, is not prone to memory fragmentation, and supports shared memory.
